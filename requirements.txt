@@ -1,0 +1,6 @@
+# Runtime dependencies (pinned so every laptop runs the same versions)
+Django==5.2.19
+djangorestframework==3.18.3
+argon2-cffi==25.1.0
+cryptography==50.0.1
+python-dotenv==1.2.3
