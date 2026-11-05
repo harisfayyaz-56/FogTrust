@@ -104,7 +104,6 @@ need `.env` and never touch your local data.
 | [docs/api-contract.md](docs/api-contract.md) | Endpoints, request and response shapes, roles, error codes |
 | [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
 | [docs/decisions/](docs/decisions/) | Architecture decision records |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Branching, commits, review rules |
 
 ## Status
 
