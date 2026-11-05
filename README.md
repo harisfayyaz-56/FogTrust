@@ -44,5 +44,19 @@ python -m pytest
 
 ## Documentation
 
-Design documents (data model, API contract, threat model) are in [`docs/`](docs/).
-See [CONTRIBUTING.md](CONTRIBUTING.md) for branch and commit conventions.
+| Document | Contents |
+|---|---|
+| [docs/data-model.md](docs/data-model.md) | Tables, decision schema, audit event format, input validation rules |
+| [docs/api-contract.md](docs/api-contract.md) | Endpoints, request and response shapes, roles, error codes |
+| [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
+| [docs/decisions/](docs/decisions/) | Architecture decision records |
+
+## Status
+
+| Week | Milestone | State |
+|---|---|---|
+| 1 | Requirements, data model, API contract, threat model, skeleton | In progress |
+| 2 | Authentication, audit log, one end-to-end slice | Planned |
+| 3 | Security engine, dashboard, features | Planned |
+| 4 | Integration, adversarial tests, measurement, hardening | Planned |
+| 5 | Fixes, evaluation, documentation, demo | Planned |
