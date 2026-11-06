@@ -1,0 +1,28 @@
+# Threat Model: Cryptography and Node Simulator slice
+
+| | |
+|---|---|
+| Slice | Member 2 (FR-2 signed heartbeat, FR-5 encrypted results) |
+| Method | STRIDE per trust boundary (same boundaries as [identity-access-audit.md](identity-access-audit.md)) |
+| Version | 0.2 (Week 3) |
+
+Status: **Built** means code and a passing test exist today. **Partly built** and **Open** are explained in the row.
+Test names are in `backend/fogtrust_crypto/tests/`. Evidence tables for T2 and T4 are in [../test-evidence/crypto-T2-T4.md](../test-evidence/crypto-T2-T4.md).
+
+| ID | Threat | STRIDE | Boundary | Mitigation | Evidence | Status |
+|---|---|---|---|---|---|---|
+| CR-1 | **Spoofed node**: attacker uses an enrolled node's id with their own key | Spoofing | TB2 | Every request signed; verified with the key registered at enrollment; a wrong key gives `NODE_SIGNATURE_INVALID` | `test_signature_from_another_key_is_rejected_spoofed_node_T1`, `test_T1_spoofer_is_rejected` | Built |
+| CR-2 | **Request tampering in transit**: body, path, query, method, timestamp or nonce changed | Tampering | TB2 | All six values are inside the signed string; the body is covered by its SHA-256 | `test_changed_body_is_rejected`, `test_added_query_string_is_rejected`, `test_changed_path_is_rejected`, `test_changed_method_is_rejected`, `test_tamperer_is_rejected` | Built |
+| CR-3 | **Replayed heartbeat** (T2): a captured valid request is resent | Spoofing, Tampering | TB2 | Timestamp window, unique nonce per node (atomic), strictly increasing counter (atomic); nothing is stored for unauthenticated requests | `test_T2_exact_replay_is_rejected_with_the_nonce_reason`, `test_replay_later_than_the_window_is_stale_not_replayed`, `test_counter_equal_or_lower_is_rejected`, `test_identical_requests_sent_at_the_same_moment_are_accepted_exactly_once`, `test_T2_replayer_is_accepted_once_then_rejected` | Built |
+| CR-4 | **Stolen node private key** | Spoofing, Information disclosure | Node host | Key file mode 0600; load refuses looser modes; keygen refuses to overwrite; revocation ends access (T5) | `test_key_file_is_owner_only`, `test_load_refuses_group_or_world_readable_key`, `test_save_refuses_to_overwrite` | Built. Limit: Windows has no mode bits; a stolen key is full impersonation until revoked |
+| CR-5 | **Forged or swapped enrollment proof** | Spoofing | TB2 | The proof signs domain, token, name and public key together; invalid input returns `False`, never an exception | `test_enrollment_proof_is_bound_to_token_and_name`, `test_enrollment_proof_from_another_key_fails` | Built |
+| CR-6 | **Delimiter or canonicalisation confusion** (a field containing a newline reads as the next field) | Tampering | TB2, TB3 | Method, path, timestamp and nonce are validated strictly; `fullmatch` is used so a trailing newline is refused | `test_string_to_sign_rejects_ambiguous_inputs` (this test found a real `$` anchor bug during development) | Built |
+| CR-7 | **Error oracle / node enumeration** (different replies reveal which node ids exist) | Information disclosure | TB2 | Client messages come from the generic catalog; the precise code goes only to the audit log and the Decision | catalog in `core/errors.py`; `test_node_id_that_is_not_a_uuid_is_unknown_and_not_echoed` | Built |
+| CR-8 | **Secrets in logs or decisions** | Information disclosure | TB3, TB4 | Evidence holds prefixes only; no keys, signatures, bodies or plaintext; key errors never contain key material | `test_decisions_never_contain_secrets_or_full_signature`, `test_error_messages_do_not_leak_key_material`, `test_replay_decision_has_the_shared_schema_and_no_secrets` | Built |
+| CR-9 | **Altered result** (T4): ciphertext modified in transit or before signing | Tampering | TB2 | AES-256-GCM tag (data bound to node and task) plus the request signature; failure returns `RESULT_INTEGRITY_FAILED` or `NODE_SIGNATURE_INVALID` | `test_T4_one_flipped_ciphertext_byte_is_detected`, `test_T4_altered_ciphertext_with_a_valid_signature_fails_integrity`, `test_T4_ciphertext_altered_in_transit_fails_the_signature`, `test_ciphertext_moved_to_another_task_is_detected` | Built |
+| CR-10 | **Nonce store exhaustion**: flood of unique nonces | Denial of service | TB2, TB4 | Nonces stored only after the signature passes; purged after `timestamp + window`; 2 KB heartbeat limit; the rate limit is Member 1's throttle | `test_bad_signature_cannot_fill_the_nonce_store`, `test_nonces_are_purged_only_after_their_window`, `test_oversized_body_is_refused_before_any_crypto` | Partly built (throttle pending) |
+| CR-11 | **Forged result stored directly in the database** (anyone can encrypt to the server's public key) | Tampering | TB4 | Not mitigated: the data model stores no node signature per result. Accepted limitation; the audit log and database permissions are the controls | none (documented in node-signing-spec.md section 6) | Open |
+| CR-12 | **Low-order or malformed ephemeral key** in a result envelope | Tampering, Denial of service | TB2 | Strict base64 parsing; an all-zero (low-order) key is refused; no exception escapes | `test_malformed_envelopes_fail_safely` | Built |
+| CR-13 | **Plaintext or keys written to logs** by a debugging line | Information disclosure | TB3 | `DecryptionOutcome.plaintext` is hidden from `repr`; decisions hold a hash prefix only | `test_outcome_repr_and_decision_never_contain_plaintext_or_keys` | Built |
+
+Rule for all entries: private keys and plaintext results are never logged.
