@@ -58,6 +58,21 @@ Check order on the server (each failure is logged with its own code):
 5. timestamp within window → else `HEARTBEAT_STALE`
 6. nonce unused → else `HEARTBEAT_REPLAYED`
 
+Heartbeat only, after step 6 (the counter is in the JSON body, which the generic check does not read):
+7. body has exactly the agreed fields and types → else `MALFORMED_REQUEST` (not JSON) or `VALIDATION_ERROR`
+8. counter greater than the node's last counter → else `HEARTBEAT_COUNTER_REGRESSED`
+
+Before step 1, a body over the endpoint's limit is refused with `PAYLOAD_TOO_LARGE` (heartbeat 2 KB, result about 64 KB).
+
+Rules that make the scheme unambiguous (added in 0.2):
+- `PATH` is the request target as sent, **including the `?query`** when there is one (Django: `request.get_full_path()`).
+- The hash is over the **raw body bytes**. The server reads `request.body` before DRF parses `request.data`.
+- Only an absent or empty header is `NODE_SIGNATURE_MISSING`. A malformed timestamp, nonce or signature is `NODE_SIGNATURE_INVALID`, reported at step 4.
+- A state change happens only after the checks that precede it: steps 1 to 4 touch nothing, and the counter moves only when every check has passed. A nonce is remembered once step 6 passes, so a request that fails step 7 or 8 still burns its nonce (harmless: an honest node never reuses one).
+- Nonce and counter updates must be atomic (`unique (node, nonce)`; `UPDATE ... WHERE last_counter < new`). Check-then-store is a race.
+- The nonce is kept until `timestamp + timestamp_window_s`, then purged.
+- The client sees only the generic message from `errors.py`. The precise code goes to the audit log and the Decision.
+
 Node endpoints do not use session authentication, so CSRF does not apply to them.
 
 ## 3. Roles
@@ -282,7 +297,8 @@ on that node are returned to the queue (Member 3).
 | GET | `/nodes/{id}/heartbeats/` | any user | 3 | History (`?accepted=false`) |
 
 ```json
-// request body (signed per 2.2)
+// request body (signed per 2.2): exactly these three fields, at most 2 KB
+// counter: integer >= 1 and strictly increasing; reported_load: integer 0..32767; sent_at: ISO 8601
 {"counter": 42, "reported_load": 1, "sent_at": "2026-11-19T10:20:31Z"}
 // 200
 {"accepted": true, "server_time": "2026-11-19T10:20:31.402Z", "next_heartbeat_in": 10}
@@ -307,6 +323,26 @@ A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original t
 |---|---|---|---|---|
 | POST | `/node-api/tasks/{id}/result/` | signed node, assigned to that task | 3 | FR-5 |
 | GET | `/tasks/{id}/result/` | operator, admin | 3 | Decrypted summary and integrity status |
+
+```json
+// POST /node-api/tasks/{id}/result/ body (a normal signed node request per 2.2)
+{
+  "ephemeral_public_key": "base64, 44 chars (X25519, 32 bytes)",
+  "nonce": "base64, 16 chars (12 bytes)",
+  "ciphertext": "base64, AES-256-GCM output (data + 16-byte tag), at most 65536 chars"
+}
+// 200
+{"accepted": true}
+```
+
+- The node encrypts to the server's long-term X25519 public key (ECDH with a new ephemeral key per result, HKDF-SHA256, AES-256-GCM).
+  The associated data binds the ciphertext to `node_id` and `task_id`.
+- There is no separate envelope signature: the request signature (2.2) covers the body hash, so it already covers the ciphertext.
+- Check order: size, steps 1 to 6 of 2.2, task assigned to this node (else `RESULT_NOT_ASSIGNED`), JSON parse, envelope fields
+  (`VALIDATION_ERROR`), GCM tag (`RESULT_INTEGRITY_FAILED`). The server stores `plaintext_sha256`, never the plaintext where avoidable.
+- A result for a task that already has one is the caller's `TASK_INVALID_STATE`.
+- **Open for Member 1 (proposal):** the server's X25519 public key is returned in the enrollment response as `server_public_key`
+  (section 5.4); the private key is loaded from a 0600 file named by `FOGTRUST_RESULT_KEY_FILE` and kept out of git.
 
 ### 5.8 Trust and policy — Member 3 (*Proposed*)
 
@@ -401,3 +437,4 @@ mention it in the PR description.
 | Date | Version | Change | By |
 |---|---|---|---|
 | 2026-11-05 | 0.1 | First draft | Member 1 |
+| 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers are `NODE_SIGNATURE_INVALID`; steps 7 and 8 and size limits for heartbeats; atomic nonce and counter rules. Section 5.5: heartbeat body limits. Section 5.7: result envelope, check order, `server_public_key` proposal | Member 2 |
