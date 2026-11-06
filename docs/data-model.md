@@ -276,19 +276,31 @@ warning, score or allow/deny decision explainable and reproducible, as the brief
 ### 5.2 Hash chain
 
 ```
-canonical = JSON of every field except `hash`,
-            keys sorted, separators (",", ":"), UTF-8,
-            timestamp as ISO 8601 with microseconds and "Z"
+canonical = JSON of every field except `hash` (including `sequence`),
+            keys sorted, separators (",", ":"), non-ASCII escaped,
+            timestamp as ISO 8601 UTC with microseconds and "Z"
 hash      = SHA-256( prev_hash + "\n" + canonical )   -> lowercase hex
 ```
 
-Changing, inserting or deleting any past event changes its hash, which no longer matches the
-next event's `prev_hash`. The `verify_audit_chain` management command recomputes every hash
-and reports the first broken sequence number.
+Implemented in `backend/audit/chain.py`. Changing, inserting or deleting any past event changes its
+hash, which no longer matches the next event's `prev_hash`. Verification
+(`python manage.py verify_audit_chain`, or `POST /api/v1/audit/verify/`) recomputes every hash and
+reports the first broken sequence number with one of three problems:
 
-Each event is written inside `transaction.atomic()`. Because `prev_hash` is unique, two events
-written at the same moment can never both link to the same parent, so the chain cannot fork;
-the losing write is retried against the new latest event.
+| Problem | Meaning |
+|---|---|
+| `sequence_gap` | A sequence number is missing: an event was deleted |
+| `link_mismatch` | `prev_hash` is not the previous event's hash: an event was replaced or reordered |
+| `hash_mismatch` | The event's content no longer matches its own hash: an event was edited |
+
+Each event is written inside an atomic block, and SQLite transactions are `IMMEDIATE`
+(`config/settings.py`), so "read the latest event, insert the next one" is one serialised step.
+`prev_hash` is also unique, so two events can never link to the same parent and the chain cannot
+fork; a write that loses a race is retried.
+
+Known limit: removing the **newest** events from the end of the file leaves a shorter chain that
+still verifies. The database triggers block this through SQLite; detecting it after direct file
+edits would need the latest hash stored somewhere else (see the limitations statement).
 
 ### 5.3 Append-only enforcement
 
@@ -304,7 +316,8 @@ the losing write is retried against the new latest event.
 | `auth.login` | M1 | success, failure |
 | `auth.logout` | M1 | success |
 | `auth.session_expired` | M1 | failure |
-| `access.denied` | M1 (permission classes) | denied |
+| `access.denied` | M1 (exception handler: role denied or CSRF failed) | denied |
+| `request.rate_limited` | M1 (exception handler; once per client per minute) | denied |
 | `user.create`, `user.role_change`, `user.disable` | M1 | success, failure |
 | `enroll.token_create`, `enroll.token_cancel` | M1 | success |
 | `node.enroll` | M1 | success, failure |
@@ -319,13 +332,21 @@ the losing write is retried against the new latest event.
 
 ### 5.5 Redaction rules
 
-Before an event is written, `details` passes through `redact()`:
+Before an event is written, `details` passes through `redact_details()` (`backend/audit/redaction.py`):
 
-- Any key whose name contains `password`, `secret`, `token`, `private`, `api_key`,
-  `authorization`, `cookie`, `session` or `csrf` (case-insensitive) is replaced with `"[REDACTED]"`.
+- Any key whose name contains `password`, `passwd`, `secret`, `token`, `private`, `api_key`,
+  `apikey`, `authorization`, `cookie`, `session`, `csrf`, `signature`, `proof` or `credential`
+  (case-insensitive, at any depth) is replaced with `"[REDACTED]"`.
+  Exceptions: `token_id` and `token_label`, which identify a token without revealing it.
 - Strings longer than 256 characters are truncated with a `…[truncated]` marker.
+- At most 50 keys or list items per level and 4 levels deep; values that are not JSON
+  (UUIDs, datetimes) are stored as text.
+- If the result is still over 4 KB, it is replaced by `{"_truncated": true, "keys": [...]}`.
 - Request bodies are never logged whole. Only the specific fields needed are copied in.
 - Enrollment tokens are referenced by `token_id`, never by value.
+
+How to write an event from any slice: `audit.services.log_event()` (see its docstring).
+Write failure events **outside** any `transaction.atomic()` block that is about to roll back.
 
 ### 5.6 Example
 
