@@ -1,0 +1,35 @@
+"""
+Reason codes this package can return.
+
+The values must match backend/core/errors.py (the single source of truth for
+the API). This package cannot import that file because it holds Django REST
+Framework code, so tests/test_codes_sync.py compares the two and fails if
+they drift apart.
+"""
+
+OK = "OK"
+
+NODE_SIGNATURE_MISSING = "NODE_SIGNATURE_MISSING"
+NODE_SIGNATURE_INVALID = "NODE_SIGNATURE_INVALID"
+NODE_UNKNOWN = "NODE_UNKNOWN"
+NODE_REVOKED = "NODE_REVOKED"
+HEARTBEAT_STALE = "HEARTBEAT_STALE"
+HEARTBEAT_REPLAYED = "HEARTBEAT_REPLAYED"
+HEARTBEAT_COUNTER_REGRESSED = "HEARTBEAT_COUNTER_REGRESSED"
+RESULT_INTEGRITY_FAILED = "RESULT_INTEGRITY_FAILED"
+ENROLL_PROOF_INVALID = "ENROLL_PROOF_INVALID"
+ENROLL_KEY_INVALID = "ENROLL_KEY_INVALID"
+
+# Codes (other than OK) that this package defines; used by the sync test.
+ALL_CODES = (
+    NODE_SIGNATURE_MISSING,
+    NODE_SIGNATURE_INVALID,
+    NODE_UNKNOWN,
+    NODE_REVOKED,
+    HEARTBEAT_STALE,
+    HEARTBEAT_REPLAYED,
+    HEARTBEAT_COUNTER_REGRESSED,
+    RESULT_INTEGRITY_FAILED,
+    ENROLL_PROOF_INVALID,
+    ENROLL_KEY_INVALID,
+)
