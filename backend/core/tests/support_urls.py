@@ -68,7 +68,25 @@ class ThrottledView(APIView):
         return Response({"ok": True})
 
 
+class ChoiceView(APIView):
+    """Validates a choice field and a strict body, to check messages never echo input."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from rest_framework import serializers
+
+        from core.serializers import StrictSerializer
+
+        class Body(StrictSerializer):
+            role = serializers.ChoiceField(choices=["admin", "viewer"])
+
+        Body(data=request.data).is_valid(raise_exception=True)
+        return Response({"ok": True})
+
+
 urlpatterns = [
+    path("t/choice/", ChoiceView.as_view()),
     path("t/echo/", EchoView.as_view()),
     path("t/public-echo/", PublicEchoView.as_view()),
     path("t/forbidden/", ForbiddenView.as_view()),

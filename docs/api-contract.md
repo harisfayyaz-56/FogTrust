@@ -33,7 +33,9 @@ so **a change to a shape must be announced in the group and recorded in the chan
 2. `POST /api/v1/auth/login/` with the header `X-CSRFToken: <csrftoken value>`.
    On success the server sets `fogtrust_session` (HttpOnly, SameSite=Strict) and rotates the CSRF token.
 3. Every later POST, PUT, PATCH and DELETE sends `X-CSRFToken`.
-4. The session expires after **30 minutes of inactivity** or when the browser closes.
+4. The session expires after **30 minutes of inactivity**, **8 hours after login** however active it is,
+   or when the browser closes. A request with an expired session gets `401 AUTH_SESSION_EXPIRED`
+   (no session cookie at all gives `401 AUTH_REQUIRED`); the dashboard should send the user to login.
 
 ### 2.2 Edge nodes: signed requests (no cookies, no passwords) — *Proposed by M1, owned by M2*
 
@@ -151,10 +153,10 @@ Legend: **Auth** = who may call. **Owner** = who builds it. **Wk** = target week
 
 | Method | Path | Auth | Wk | Purpose |
 |---|---|---|---|---|
-| GET | `/auth/csrf/` | public | 2 | Set the CSRF cookie |
-| POST | `/auth/login/` | public, throttled 5/min | 2 | Start a session |
-| POST | `/auth/logout/` | logged in | 2 | End the session |
-| GET | `/auth/me/` | logged in | 2 | Current user and role |
+| GET | `/auth/csrf/` | public | 2 ✅ | Set the CSRF cookie; also returns `{"csrf_token": "..."}` |
+| POST | `/auth/login/` | public + CSRF, throttled 5/min per IP and 20/hour per username | 2 ✅ | Start a session |
+| POST | `/auth/logout/` | logged in + CSRF | 2 ✅ | End the session. `204 No Content` |
+| GET | `/auth/me/` | logged in | 2 ✅ | Current user, role and permissions |
 
 **POST `/auth/login/`**
 
@@ -177,8 +179,14 @@ Legend: **Auth** = who may call. **Owner** = who builds it. **Wk** = target week
 
 ```json
 // 200
-{"username": "operator1", "role": "operator", "permissions": ["tasks.submit", "reports.export", "nodes.view"]}
+{"username": "operator1", "role": "operator",
+ "permissions": ["decisions.view", "nodes.view", "policy.view", "reports.export", "results.view",
+                 "tasks.cancel", "tasks.submit", "tasks.view", "trust.view"],
+ "session_idle_timeout": 1800}
 ```
+
+Permission names come from `CAPABILITIES` in `backend/accounts/permissions.py`, the single source of
+truth for section 3. Server code protects a view with `permission_classes = [require("nodes.revoke")]`.
 
 `permissions` lets the dashboard hide controls the user cannot use. It is a convenience only;
 the server still checks every request.
@@ -357,14 +365,14 @@ A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original t
 | Method | Path | Auth | Wk | Purpose |
 |---|---|---|---|---|
 | GET | `/decisions/` | any user | 3 | Evidence view (`?subject_type=`, `?decision=`, `?reason_code=`, `?since=`) |
-| GET | `/audit/` | admin | 2 | Audit log (`?action=`, `?actor=`, `?outcome=`, `?since=`, `?until=`) |
-| POST | `/audit/verify/` | admin | 3 | Recompute the hash chain |
+| GET | `/audit/` | admin | 2 ✅ | Audit log, newest first (`?action=`, `?actor=`, `?outcome=`, `?reason_code=`, `?since=`, `?until=`) |
+| POST | `/audit/verify/` | admin | 2 ✅ | Recompute the hash chain (also: `python manage.py verify_audit_chain`) |
 
 ```json
 // POST /audit/verify/ — 200
-{"valid": true, "events_checked": 1284, "first_broken_sequence": null, "checked_at": "..."}
+{"valid": true, "events_checked": 1284, "first_broken_sequence": null, "problem": null, "checked_at": "..."}
 // tampered log — 200 with valid=false (verification itself succeeded)
-{"valid": false, "events_checked": 1284, "first_broken_sequence": 731, "checked_at": "..."}
+{"valid": false, "events_checked": 731, "first_broken_sequence": 731, "problem": "hash_mismatch", "checked_at": "..."}
 ```
 
 ### 5.10 Reports — Member 4 (*Proposed*)
@@ -437,4 +445,5 @@ mention it in the PR description.
 | Date | Version | Change | By |
 |---|---|---|---|
 | 2026-11-05 | 0.1 | First draft | Member 1 |
-| 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers are `NODE_SIGNATURE_INVALID`; steps 7 and 8 and size limits for heartbeats; atomic nonce and counter rules. Section 5.5: heartbeat body limits. Section 5.7: result envelope, check order, `server_public_key` proposal | Member 2 |
+| 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers return `NODE_SIGNATURE_INVALID` (see node-signing-spec.md) | Member 2 |
+| 2026-11-06 | 0.3 | Auth endpoints built: logout returns 204, `/me` adds `session_idle_timeout`, 8-hour absolute session limit, per-username login limit; audit verify adds `problem` | Member 1 |

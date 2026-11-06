@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     # FogTrust apps
     "core",
     "accounts",
+    "audit",
 ]
 
 MIDDLEWARE = [
@@ -101,6 +102,12 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": _sqlite_path if _sqlite_path.is_absolute() else BASE_DIR / _sqlite_path,
+        "OPTIONS": {
+            # Writers take the lock at BEGIN, so "read last audit event, insert next"
+            # can never interleave between two requests (audit/services.py).
+            "transaction_mode": "IMMEDIATE",
+            "timeout": 20,
+        },
     }
 }
 
@@ -129,6 +136,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # ---------------------------------------------------------------------------
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # survives server restart
 SESSION_COOKIE_AGE = env_int("SESSION_IDLE_TIMEOUT_SECONDS", 1800)
+# Hard limit after login, however active the session is (accounts/authentication.py).
+SESSION_ABSOLUTE_TIMEOUT_SECONDS = env_int("SESSION_ABSOLUTE_TIMEOUT_SECONDS", 8 * 3600)
 SESSION_SAVE_EVERY_REQUEST = True  # sliding window: expires after N seconds of inactivity
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True  # JavaScript cannot read the session cookie
@@ -166,7 +175,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = DATA_UPLOAD_MAX_MEMORY_SIZE
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     # Humans log in with a session cookie. Nodes use signed requests (added in Week 3).
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["accounts.authentication.FogTrustSessionAuthentication"],
     # Deny by default: every endpoint needs a logged-in user unless it opts out explicitly.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
@@ -180,11 +189,12 @@ REST_FRAMEWORK = {
         "anon": "60/min",
         "user": "600/min",
         # Scoped rates used by specific endpoints (Week 2 and 3)
-        "login": "5/min",
+        "login": os.environ.get("LOGIN_RATE_LIMIT", "5/min"),
+        "login_username": os.environ.get("LOGIN_USERNAME_RATE_LIMIT", "20/hour"),
         "enroll": "10/min",
         "heartbeat": "120/min",
     },
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
 }
