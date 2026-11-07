@@ -24,7 +24,7 @@ export const Badge: React.FC<BadgeProps> = ({ label, variant, size = 'sm' }) => 
       color = 'bg-rose-950/70 text-rose-300 border-rose-800';
     } else if (['operator', 'assigned', 'pending', 'flag'].includes(lower)) {
       color = 'bg-amber-950/70 text-amber-300 border-amber-800';
-    } else if (['viewer', 'queued', 'heartbeat', 'task'].includes(lower)) {
+    } else if (['viewer', 'queued', 'heartbeat', 'task', 'enrolled'].includes(lower)) {
       color = 'bg-sky-950/70 text-sky-300 border-sky-800';
     }
   }

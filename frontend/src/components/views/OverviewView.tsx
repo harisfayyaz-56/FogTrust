@@ -8,12 +8,15 @@ import {
   ListTodo,
   TrendingUp,
   AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getNodes, getDecisions, getAuditEvents, getTasks, verifyAuditChain } from '../../services/api';
 import { NodeItem, Decision, AuditEvent, Task, AuditVerifyReport } from '../../types/api';
 import { Badge } from '../common/Badge';
 import { TrustScoreBar } from '../common/TrustScoreBar';
+import { EmptyState, ErrorState, LoadingState } from '../common/ViewState';
+import { getNodeDisplayStatus } from '../../utils/nodeStatus';
 
 export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ onNavigate }) => {
   const { isDemoMode, role } = useAuth();
@@ -23,10 +26,13 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [chainReport, setChainReport] = useState<AuditVerifyReport | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
     setIsLoading(true);
+    setLoadError(null);
 
     Promise.allSettled([
       getNodes({}, isDemoMode),
@@ -41,19 +47,43 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
       if (auditRes.status === 'fulfilled') setAuditEvents(auditRes.value.results || []);
       if (tasksRes.status === 'fulfilled') setTasks(tasksRes.value.results || []);
       if (verifyRes.status === 'fulfilled') setChainReport(verifyRes.value);
+
+      const coreFailures = [nodesRes, decisionsRes, tasksRes].filter((res) => res.status === 'rejected');
+      if (coreFailures.length === 3) {
+        const first = coreFailures[0] as PromiseRejectedResult;
+        setLoadError(
+          first.reason instanceof Error
+            ? first.reason.message
+            : 'Could not load dashboard data from the FogTrust broker.'
+        );
+      } else if (coreFailures.length > 0) {
+        const failedNames = [
+          nodesRes.status === 'rejected' ? 'nodes' : null,
+          decisionsRes.status === 'rejected' ? 'decisions' : null,
+          tasksRes.status === 'rejected' ? 'tasks' : null,
+        ]
+          .filter(Boolean)
+          .join(', ');
+        setLoadError(`Some dashboard data could not be loaded (${failedNames}).`);
+      }
       setIsLoading(false);
     });
 
     return () => {
       mounted = false;
     };
-  }, [isDemoMode, role]);
+  }, [isDemoMode, role, refreshKey]);
 
-  const activeNodes = nodes.filter((n) => n.status === 'active');
+  const refresh = () => setRefreshKey((key) => key + 1);
+
+  const activeNodes = nodes.filter((n) => getNodeDisplayStatus(n) === 'active');
+  const enrolledNodes = nodes.filter((n) => n.status !== 'revoked');
+  const awaitingHeartbeat = enrolledNodes.length - activeNodes.length;
   const revokedNodes = nodes.filter((n) => n.status === 'revoked');
   const avgTrust =
     nodes.length > 0 ? Math.round(nodes.reduce((acc, n) => acc + n.trust_score, 0) / nodes.length) : 0;
   const recentDenials = decisions.filter((d) => d.decision === 'deny');
+  const isEmpty = nodes.length === 0 && decisions.length === 0 && tasks.length === 0;
 
   return (
     <div className="space-y-6">
@@ -80,6 +110,26 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
         </div>
       </div>
 
+      {loadError ? (
+        <ErrorState title="Could not load the security dashboard" message={loadError} onRetry={refresh} />
+      ) : isLoading ? (
+        <LoadingState label="Loading fleet, decisions, tasks, and audit status…" />
+      ) : isEmpty ? (
+        <EmptyState
+          title="No operational data yet"
+          description="The broker has no enrolled nodes, security decisions, or tasks. Enroll an edge node to start seeing live dashboard metrics."
+          icon={<Activity className="w-5 h-5" />}
+          action={
+            <button
+              onClick={() => onNavigate('nodes')}
+              className="mt-1 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-medium"
+            >
+              Open Edge Nodes
+            </button>
+          }
+        />
+      ) : (
+        <>
       {/* Key Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Active Nodes */}
@@ -92,13 +142,18 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-100">{activeNodes.length}</span>
-            <span className="text-xs text-slate-500 font-mono">/ {nodes.length} enrolled</span>
+            <span className="text-xs text-slate-500 font-mono">/ {enrolledNodes.length} enrolled</span>
           </div>
           <div className="mt-2 text-xs text-slate-400 flex items-center gap-1">
             <span className="text-emerald-400 font-medium">
-              {nodes.length > 0 ? Math.round((activeNodes.length / nodes.length) * 100) : 0}%
+              {enrolledNodes.length > 0 ? Math.round((activeNodes.length / enrolledNodes.length) * 100) : 0}%
             </span>
             <span>fleet availability</span>
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500">
+            {awaitingHeartbeat > 0
+              ? `${awaitingHeartbeat} awaiting first heartbeat`
+              : 'All enrolled nodes reporting'}
           </div>
         </div>
 
@@ -191,7 +246,7 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-slate-200">{node.name}</span>
-                      <Badge label={node.status} size="sm" />
+                      <Badge label={getNodeDisplayStatus(node)} size="sm" />
                     </div>
                     <p className="text-[11px] text-slate-500 font-mono mt-0.5 truncate max-w-xs">
                       Key: {node.key_fingerprint.slice(0, 16)}...
@@ -284,6 +339,8 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

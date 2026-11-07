@@ -17,13 +17,16 @@ import { getAuditEvents, verifyAuditChain } from '../../services/api';
 import { AuditEvent, AuditVerifyReport } from '../../types/api';
 import { Badge } from '../common/Badge';
 import { Modal } from '../common/Modal';
+import { EmptyState, ErrorState, LoadingState } from '../common/ViewState';
 
 export const AuditLogView: React.FC = () => {
   const { isDemoMode } = useAuth();
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [verifyReport, setVerifyReport] = useState<AuditVerifyReport | null>(null);
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // Filters
   const [actionFilter, setActionFilter] = useState<string>('');
@@ -35,6 +38,7 @@ export const AuditLogView: React.FC = () => {
 
   const fetchAuditEvents = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const res = await getAuditEvents(
         {
@@ -44,8 +48,9 @@ export const AuditLogView: React.FC = () => {
         isDemoMode
       );
       setEvents(res.results || []);
-    } catch (err) {
-      console.error('Failed to load audit events:', err);
+    } catch (err: unknown) {
+      setEvents([]);
+      setLoadError(err instanceof Error ? err.message : 'Could not load audit events.');
     } finally {
       setIsLoading(false);
     }
@@ -53,11 +58,12 @@ export const AuditLogView: React.FC = () => {
 
   const handleVerifyChain = async () => {
     setIsVerifying(true);
+    setVerifyError(null);
     try {
       const report = await verifyAuditChain(isDemoMode);
       setVerifyReport(report);
-    } catch (err: any) {
-      alert(err.message || 'Audit verification request failed');
+    } catch (err: unknown) {
+      setVerifyError(err instanceof Error ? err.message : 'Audit verification request failed.');
     } finally {
       setIsVerifying(false);
     }
@@ -163,6 +169,15 @@ export const AuditLogView: React.FC = () => {
         </div>
       )}
 
+      {verifyError && (
+        <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-800 text-xs text-rose-200 flex items-center justify-between gap-3">
+          <span>Hash-chain verification failed: {verifyError}</span>
+          <button onClick={handleVerifyChain} className="underline text-[11px] shrink-0">
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
         <div className="relative flex-1 min-w-[240px]">
@@ -195,30 +210,51 @@ export const AuditLogView: React.FC = () => {
       </div>
 
       {/* Audit Log Table */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase text-[11px]">
-              <tr>
-                <th className="py-3 px-4"># Seq</th>
-                <th className="py-3 px-4">Timestamp (UTC)</th>
-                <th className="py-3 px-4">Action</th>
-                <th className="py-3 px-4">Actor</th>
-                <th className="py-3 px-4">Target</th>
-                <th className="py-3 px-4">Outcome</th>
-                <th className="py-3 px-4">Hash Link</th>
-                <th className="py-3 px-4 text-right">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {filteredEvents.length === 0 ? (
+      {loadError ? (
+        <ErrorState title="Could not load the audit log" message={loadError} onRetry={fetchAuditEvents} />
+      ) : isLoading ? (
+        <LoadingState label="Loading append-only audit records…" />
+      ) : filteredEvents.length === 0 ? (
+        <EmptyState
+          title={events.length === 0 ? 'No audit records found' : 'No audit records match your search'}
+          description={
+            events.length === 0
+              ? 'Security events will appear here as users, nodes, and the trust engine perform audited actions.'
+              : 'Try clearing the search query or changing the outcome filter.'
+          }
+          icon={<ShieldAlert className="w-5 h-5" />}
+          action={
+            events.length > 0 ? (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setOutcomeFilter('');
+                }}
+                className="mt-1 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-medium"
+              >
+                Clear filters
+              </button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase text-[11px]">
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-500">
-                    {isLoading ? 'Loading audit records...' : 'No audit events found.'}
-                  </td>
+                  <th className="py-3 px-4"># Seq</th>
+                  <th className="py-3 px-4">Timestamp (UTC)</th>
+                  <th className="py-3 px-4">Action</th>
+                  <th className="py-3 px-4">Actor</th>
+                  <th className="py-3 px-4">Target</th>
+                  <th className="py-3 px-4">Outcome</th>
+                  <th className="py-3 px-4">Hash Link</th>
+                  <th className="py-3 px-4 text-right">Details</th>
                 </tr>
-              ) : (
-                filteredEvents.map((evt) => (
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {filteredEvents.map((evt) => (
                   <tr
                     key={evt.sequence}
                     onClick={() => setSelectedEvent(evt)}
@@ -260,12 +296,12 @@ export const AuditLogView: React.FC = () => {
                       </span>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Audit Event Detail Modal */}
       {selectedEvent && (

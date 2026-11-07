@@ -14,11 +14,13 @@ import { getUsers, createUser, updateUser } from '../../services/api';
 import { User, UserRole } from '../../types/api';
 import { Badge } from '../common/Badge';
 import { Modal } from '../common/Modal';
+import { EmptyState, ErrorState, LoadingState } from '../common/ViewState';
 
 export const UsersView: React.FC = () => {
   const { isDemoMode, currentUser } = useAuth();
   const [userList, setUserList] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<string>('');
 
   // Create User Modal
@@ -38,11 +40,13 @@ export const UsersView: React.FC = () => {
 
   const fetchUsers = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const res = await getUsers(roleFilter || undefined, isDemoMode);
       setUserList(res.results || []);
-    } catch (err) {
-      console.error('Failed to load users:', err);
+    } catch (err: unknown) {
+      setUserList([]);
+      setLoadError(err instanceof Error ? err.message : 'Could not load user accounts.');
     } finally {
       setIsLoading(false);
     }
@@ -182,27 +186,35 @@ export const UsersView: React.FC = () => {
       </div>
 
       {/* Users Table */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase text-[11px]">
-              <tr>
-                <th className="py-3 px-4">Username</th>
-                <th className="py-3 px-4">Role</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Joined At</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {userList.length === 0 ? (
+      {loadError ? (
+        <ErrorState title="Could not load user accounts" message={loadError} onRetry={fetchUsers} />
+      ) : isLoading ? (
+        <LoadingState label="Loading user accounts…" />
+      ) : userList.length === 0 ? (
+        <EmptyState
+          title="No user accounts found"
+          description={
+            roleFilter
+              ? 'No accounts match this role filter. Try selecting a different role.'
+              : 'Create the first console user account to grant access to the broker.'
+          }
+          icon={<Users className="w-5 h-5" />}
+        />
+      ) : (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase text-[11px]">
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-slate-500">
-                    {isLoading ? 'Loading users...' : 'No users found.'}
-                  </td>
+                  <th className="py-3 px-4">Username</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Joined At</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
-              ) : (
-                userList.map((user) => {
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {userList.map((user) => {
                   const isCurrent = user.username === currentUser?.username;
                   return (
                     <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
@@ -247,12 +259,12 @@ export const UsersView: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Create User Modal */}
       {isCreateOpen && (

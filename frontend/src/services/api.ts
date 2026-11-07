@@ -10,6 +10,8 @@ import {
   PolicyConfig,
   User,
   PaginatedResponse,
+  TrustScoreRecord,
+  HeartbeatRecord,
 } from '../types/api';
 import {
   MOCK_HEALTH,
@@ -20,6 +22,8 @@ import {
   MOCK_TASKS,
   MOCK_POLICY,
   MOCK_USERS,
+  MOCK_TRUST_HISTORY,
+  MOCK_HEARTBEATS,
 } from './mockData';
 
 export class ApiError extends Error {
@@ -202,6 +206,81 @@ export async function revokeNode(id: string, confirmName: string, reason: string
     method: 'POST',
     body: JSON.stringify({ confirm_name: confirmName, reason }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Trust score history (FR-4)
+// ---------------------------------------------------------------------------
+export async function getNodeTrustHistory(
+  nodeId: string,
+  isDemo = false
+): Promise<TrustScoreRecord[]> {
+  return request<TrustScoreRecord[]>(
+    `/api/v1/nodes/${nodeId}/trust/`,
+    {},
+    isDemo,
+    MOCK_TRUST_HISTORY[nodeId] || []
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat history, including rejected attempts (FR-2 / Evidence)
+// ---------------------------------------------------------------------------
+export async function getNodeHeartbeats(
+  nodeId: string,
+  params: { accepted?: boolean; page?: number } = {},
+  isDemo = false
+): Promise<PaginatedResponse<HeartbeatRecord>> {
+  const query = new URLSearchParams();
+  if (params.accepted !== undefined) query.set('accepted', String(params.accepted));
+  if (params.page) query.set('page', params.page.toString());
+
+  const fallback: PaginatedResponse<HeartbeatRecord> = {
+    count: 0,
+    next: null,
+    previous: null,
+    results: MOCK_HEARTBEATS.filter((heartbeat) => {
+      if (heartbeat.node !== nodeId) return false;
+      if (params.accepted !== undefined && heartbeat.accepted !== params.accepted) return false;
+      return true;
+    }).sort((a, b) => b.received_at.localeCompare(a.received_at)),
+  };
+  fallback.count = fallback.results.length;
+
+  return request<PaginatedResponse<HeartbeatRecord>>(
+    `/api/v1/nodes/${nodeId}/heartbeats/?${query.toString()}`,
+    {},
+    isDemo,
+    fallback
+  );
+}
+
+/**
+ * Evidence view helper: rejected heartbeats are stored per node, so demo mode
+ * reads the mock set directly and real mode fans out to each node's history.
+ * Partial failures are tolerated so one unavailable node does not hide the rest
+ * of the evidence.
+ */
+export async function getAllRejectedHeartbeats(isDemo = false): Promise<HeartbeatRecord[]> {
+  if (isDemo) {
+    return MOCK_HEARTBEATS.filter((heartbeat) => !heartbeat.accepted).sort((a, b) =>
+      b.received_at.localeCompare(a.received_at)
+    );
+  }
+
+  const nodeList = await getNodes({}, false);
+  const settled = await Promise.allSettled(
+    nodeList.results.map((node) => getNodeHeartbeats(node.id, { accepted: false }, false))
+  );
+
+  const rejected: HeartbeatRecord[] = [];
+  for (const entry of settled) {
+    if (entry.status === 'fulfilled') {
+      rejected.push(...entry.value.results);
+    }
+  }
+
+  return rejected.sort((a, b) => b.received_at.localeCompare(a.received_at));
 }
 
 // ---------------------------------------------------------------------------
@@ -405,82 +484,6 @@ export async function updateUser(userId: string | number, updates: { role?: stri
   });
 }
 
-// ---------------------------------------------------------------------------
-// Sanitized Export Generation (Guarantees zero secrets / keys / IPs / passwords)
-// ---------------------------------------------------------------------------
-export interface SanitizedReport {
-  generated_at: string;
-  generated_by: string;
-  scope: string;
-  summary: {
-    total_nodes: number;
-    active_nodes: number;
-    revoked_nodes: number;
-    average_trust_score: number;
-    total_decisions_analyzed: number;
-    audit_chain_verified: boolean;
-  };
-  nodes: Array<{
-    id: string;
-    name: string;
-    status: string;
-    trust_score: number;
-    capacity: number;
-    current_load: number;
-    last_seen_at: string | null;
-  }>;
-  recent_decisions: Array<{
-    decision_id: string;
-    subject_type: string;
-    decision: string;
-    reason_code: string;
-    explanation: string;
-    latency_ms: number;
-    decided_at: string;
-  }>;
-}
-
-export function buildSanitizedReportData(
-  currentUser: string,
-  nodes: NodeItem[],
-  decisions: Decision[],
-  auditValid: boolean
-): SanitizedReport {
-  const activeCount = nodes.filter((n) => n.status === 'active').length;
-  const revokedCount = nodes.filter((n) => n.status === 'revoked').length;
-  const avgTrust = nodes.length > 0 ? Math.round(nodes.reduce((acc, n) => acc + n.trust_score, 0) / nodes.length) : 0;
-
-  // STRICT SANITIZATION: Never include public_key, token_hash, ciphertext, password_hash, or IP
-  return {
-    generated_at: new Date().toISOString(),
-    generated_by: currentUser,
-    scope: 'FogTrust System Sanitized Operational & Security Summary',
-    summary: {
-      total_nodes: nodes.length,
-      active_nodes: activeCount,
-      revoked_nodes: revokedCount,
-      average_trust_score: avgTrust,
-      total_decisions_analyzed: decisions.length,
-      audit_chain_verified: auditValid,
-    },
-    nodes: nodes.map((n) => ({
-      id: n.id,
-      name: n.name,
-      status: n.status,
-      trust_score: n.trust_score,
-      capacity: n.capacity,
-      current_load: n.current_load,
-      last_seen_at: n.last_seen_at,
-    })),
-    recent_decisions: decisions.slice(0, 50).map((d) => ({
-      decision_id: d.decision_id,
-      subject_type: d.subject_type,
-      decision: d.decision,
-      reason_code: d.reason_code,
-      explanation: d.explanation,
-      latency_ms: d.latency_ms,
-      decided_at: d.decided_at,
-    })),
-  };
-}
+// Sanitized report generation lives in services/report.ts so it can be unit
+// tested without a browser or network dependency.
 

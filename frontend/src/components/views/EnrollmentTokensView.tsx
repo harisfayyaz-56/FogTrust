@@ -19,11 +19,13 @@ import {
 import { EnrollmentToken } from '../../types/api';
 import { Badge } from '../common/Badge';
 import { Modal } from '../common/Modal';
+import { EmptyState, ErrorState, LoadingState } from '../common/ViewState';
 
 export const EnrollmentTokensView: React.FC = () => {
   const { isDemoMode } = useAuth();
   const [tokens, setTokens] = useState<EnrollmentToken[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
 
   // Create token modal
@@ -39,11 +41,13 @@ export const EnrollmentTokensView: React.FC = () => {
 
   const fetchTokens = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const res = await getEnrollmentTokens(statusFilter || undefined, isDemoMode);
       setTokens(res.results || []);
-    } catch (err) {
-      console.error('Failed to load enrollment tokens:', err);
+    } catch (err: unknown) {
+      setTokens([]);
+      setLoadError(err instanceof Error ? err.message : 'Could not load enrollment tokens.');
     } finally {
       setIsLoading(false);
     }
@@ -176,28 +180,36 @@ export const EnrollmentTokensView: React.FC = () => {
       </div>
 
       {/* Tokens Table */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase text-[11px]">
-              <tr>
-                <th className="py-3 px-4">Label</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Created At</th>
-                <th className="py-3 px-4">Expires At</th>
-                <th className="py-3 px-4">Resolution</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 text-slate-300">
-              {tokens.length === 0 ? (
+      {loadError ? (
+        <ErrorState title="Could not load enrollment tokens" message={loadError} onRetry={fetchTokens} />
+      ) : isLoading ? (
+        <LoadingState label="Loading enrollment tokens…" />
+      ) : tokens.length === 0 ? (
+        <EmptyState
+          title="No enrollment tokens found"
+          description={
+            statusFilter
+              ? 'No tokens match this status filter. Try selecting a different status.'
+              : 'Generate a one-time token to enroll the first edge node.'
+          }
+          icon={<KeyRound className="w-5 h-5" />}
+        />
+      ) : (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono uppercase text-[11px]">
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-500">
-                    {isLoading ? 'Loading tokens...' : 'No enrollment tokens found.'}
-                  </td>
+                  <th className="py-3 px-4">Label</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Created At</th>
+                  <th className="py-3 px-4">Expires At</th>
+                  <th className="py-3 px-4">Resolution</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
-              ) : (
-                tokens.map((token) => {
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                {tokens.map((token) => {
                   const status = getTokenStatus(token);
                   return (
                     <tr key={token.id} className="hover:bg-slate-800/40 transition-colors">
@@ -242,12 +254,12 @@ export const EnrollmentTokensView: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Generate Token Modal */}
       {isCreateOpen && (

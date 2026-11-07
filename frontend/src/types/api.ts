@@ -1,5 +1,8 @@
 export type UserRole = 'admin' | 'operator' | 'viewer';
 
+export type NodeStatus = 'active' | 'revoked';
+export type NodeDisplayStatus = 'enrolled' | 'active' | 'revoked';
+
 export interface User {
   id: number | string;
   username: string;
@@ -19,7 +22,7 @@ export interface AuthMeResponse {
 export interface NodeItem {
   id: string;
   name: string;
-  status: 'active' | 'revoked';
+  status: NodeStatus;
   key_fingerprint: string;
   capacity: number;
   current_load: number;
@@ -51,6 +54,54 @@ export interface RuleFired {
   value?: number | string;
   contribution?: number;
   reason?: string;
+}
+
+/** One rule evaluation stored with a trust-score snapshot (docs/data-model.md 3.7). */
+export interface TrustRuleFired {
+  rule: string;
+  weight: number;
+  value: number;
+  contribution: number;
+  reason: string;
+}
+
+export interface TrustScoreRecord {
+  id: number;
+  node: string;
+  node_name: string;
+  score: number;
+  previous_score: number;
+  rules_fired: TrustRuleFired[];
+  policy_version: number;
+  computed_at: string;
+  /** Human explanation supplied by the mock/API layer when available. */
+  explanation?: string;
+}
+
+export type HeartbeatRejectionCode =
+  | 'NODE_SIGNATURE_INVALID'
+  | 'NODE_SIGNATURE_MISSING'
+  | 'HEARTBEAT_STALE'
+  | 'HEARTBEAT_REPLAYED'
+  | 'HEARTBEAT_COUNTER_REGRESSED'
+  | 'NODE_REVOKED'
+  | 'NODE_UNKNOWN'
+  | '';
+
+/** A stored heartbeat attempt, including rejected attempts (docs/data-model.md 3.4). */
+export interface HeartbeatRecord {
+  id: number;
+  node: string;
+  node_name: string;
+  counter: number;
+  nonce_prefix: string;
+  sent_at: string;
+  received_at: string;
+  reported_load: number;
+  accepted: boolean;
+  reason_code: HeartbeatRejectionCode;
+  /** Plain-language detail for the evidence view (never contains raw signature material). */
+  rejection_detail?: string;
 }
 
 export interface Decision {

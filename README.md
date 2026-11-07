@@ -57,11 +57,20 @@ On Windows PowerShell use `$env:FOGTRUST_ENROLL_TOKEN = "<token>"` instead of th
 python -m pytest
 ```
 
+Dashboard unit tests (report sanitization):
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
 ## Documentation
 
 | Document | Contents |
 |---|---|
 | [docs/data-model.md](docs/data-model.md) | Tables, decision schema, audit event format, input validation rules |
+| [docs/data-flow.md](docs/data-flow.md) | Trust boundaries and end-to-end flows: browser, API, security engine, repository + audit log, node simulators |
 | [docs/api-contract.md](docs/api-contract.md) | Endpoints, request and response shapes, roles, error codes |
 | [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
 | [docs/test-evidence/](docs/test-evidence/) | Input, expected, actual and result for T1 to T5 and T-final, with measurements |
@@ -73,6 +82,6 @@ python -m pytest
 |---|---|---|
 | 1 | Requirements, data model, API contract, threat model, skeleton | Done |
 | 2 | Authentication, audit log, one end-to-end slice | Done |
-| 3 | Security engine, dashboard, features | In progress: identity, enrollment, revocation, users and evidence view done; replay defence and encrypted results done; heartbeat/task endpoints, trust engine and dashboard pending |
+| 3 | Security engine, dashboard, features | Dashboard Phase 2 done: node status, trust detail, task history, evidence/rejected heartbeats, admin settings, sanitized reports, state handling, and data-flow docs |
 | 4 | Integration, adversarial tests, measurement, hardening | Planned |
 | 5 | Fixes, evaluation, documentation, demo | Planned |
