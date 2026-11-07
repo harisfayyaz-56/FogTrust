@@ -13,6 +13,8 @@ urlpatterns = [
     path("api/v1/", include("core.urls")),
     path("api/v1/auth/", include("accounts.urls")),
     path("api/v1/audit/", include("audit.urls")),
+    path("api/v1/tasks/", include("tasks.urls")),
+    path("api/v1/", include("trust.urls")),
 ]
 
 # The Django admin has its own login page without our rate limits or audit events,

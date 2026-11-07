@@ -62,6 +62,9 @@ INSTALLED_APPS = [
     "core",
     "accounts",
     "audit",
+    "nodes",
+    "trust",
+    "tasks",
 ]
 
 MIDDLEWARE = [
