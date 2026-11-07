@@ -42,14 +42,14 @@ Every component ──writes──> AuditEvent (who did what; append-only, hash-
 | Entity | Django app | Owner | Status |
 |---|---|---|---|
 | User | `accounts` | Member 1 | **Built (Week 1)** |
-| EnrollmentToken | `nodes` | Member 1 | Agreed in this doc |
-| Node | `nodes` | Member 1 (Members 2, 3 update some fields) | Agreed in this doc |
+| EnrollmentToken | `nodes` | Member 1 | **Built (Week 3)** |
+| Node | `nodes` | Member 1 (Members 2, 3 update some fields) | **Built (Week 3)** |
 | Heartbeat | `heartbeats` | Member 2 | *Proposed* |
 | Task | `tasks` | Member 3 | *Proposed* |
 | TaskResult | `results` | Member 2 | *Proposed* |
 | TrustScoreRecord | `trust` | Member 3 | *Proposed* |
 | PolicyConfig | `trust` | Member 3 (admin endpoint and audit by Member 1) | *Proposed* |
-| Decision | `core` | Member 1 provides model; every slice writes | Agreed in this doc |
+| Decision | `core` | Member 1 provides model; every slice writes | **Built (Week 3)**: write with `core.decisions.record_decision()` |
 | AuditEvent | `audit` | Member 1 | Agreed in this doc |
 
 ---
@@ -318,7 +318,7 @@ edits would need the latest hash stored somewhere else (see the limitations stat
 | `auth.session_expired` | M1 | failure |
 | `access.denied` | M1 (exception handler: role denied or CSRF failed) | denied |
 | `request.rate_limited` | M1 (exception handler; once per client per minute) | denied |
-| `user.create`, `user.role_change`, `user.disable` | M1 | success, failure |
+| `user.create`, `user.role_change`, `user.disable`, `user.enable` | M1 | success, failure |
 | `enroll.token_create`, `enroll.token_cancel` | M1 | success |
 | `node.enroll` | M1 | success, failure |
 | `node.revoke` | M1 | success, failure, denied |

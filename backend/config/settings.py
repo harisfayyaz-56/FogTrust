@@ -63,8 +63,6 @@ INSTALLED_APPS = [
     "accounts",
     "audit",
     "nodes",
-    "trust",
-    "tasks",
 ]
 
 MIDDLEWARE = [
@@ -194,9 +192,13 @@ REST_FRAMEWORK = {
         # Scoped rates used by specific endpoints (Week 2 and 3)
         "login": os.environ.get("LOGIN_RATE_LIMIT", "5/min"),
         "login_username": os.environ.get("LOGIN_USERNAME_RATE_LIMIT", "20/hour"),
-        "enroll": "10/min",
+        "enroll": os.environ.get("ENROLL_RATE_LIMIT", "10/min"),
         "heartbeat": "120/min",
     },
+    # Throttles identify a client by REMOTE_ADDR only. With DRF's default (None) the
+    # client-supplied X-Forwarded-For header is trusted, so one attacker could rotate it
+    # and never hit the login or enrollment limit. Raise this only behind a real proxy.
+    "NUM_PROXIES": env_int("TRUSTED_PROXY_COUNT", 0),
     "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
@@ -209,6 +211,21 @@ CACHES = {
         "LOCATION": "fogtrust",
     }
 }
+
+# ---------------------------------------------------------------------------
+# Nodes and enrollment (Member 1)
+# ---------------------------------------------------------------------------
+# Trust score a newly enrolled node starts with. Member 3's policy engine owns the
+# score afterwards; this is only the starting value.
+INITIAL_TRUST_SCORE = min(100, max(0, env_int("INITIAL_TRUST_SCORE", 100)))
+ENROLLMENT_TOKEN_DEFAULT_MINUTES = 15
+ENROLLMENT_TOKEN_MAX_MINUTES = 24 * 60
+ENROLL_MAX_BODY_BYTES = 4096  # enrollment is public, so it gets a much smaller cap than 256 KB
+
+# Long-term X25519 key for result encryption (FR-5). A file readable only by its owner,
+# created with `python manage.py generate_server_key`. Its PUBLIC half is returned to
+# nodes at enrollment as `server_public_key`. Empty means "not configured yet".
+RESULT_KEY_FILE = os.environ.get("FOGTRUST_RESULT_KEY_FILE", "").strip()
 
 # ---------------------------------------------------------------------------
 # Internationalisation and time
