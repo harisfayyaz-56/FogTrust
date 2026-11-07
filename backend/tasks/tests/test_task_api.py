@@ -113,7 +113,7 @@ class TaskAPITests(TestCase):
         )
 
         resp = self.client.get(
-            "/api/v1/tasks/node-api/next/",
+            "/api/v1/node-api/tasks/next/",
             HTTP_X_NODE_ID=str(self.node.id),
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)

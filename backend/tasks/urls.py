@@ -8,6 +8,5 @@ urlpatterns = [
     path("list/", views.TaskListView.as_view(), name="list"),
     path("<uuid:id>/", views.TaskDetailView.as_view(), name="detail"),
     path("<uuid:id>/cancel/", views.TaskCancelView.as_view(), name="cancel"),
-    path("node-api/next/", views.NodeNextTaskView.as_view(), name="node_next"),
 ]
 

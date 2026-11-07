@@ -18,16 +18,15 @@ class NodeTrustHistoryView(ListAPIView):
         return TrustScoreRecord.objects.filter(node_id=node_id).order_by("-computed_at")
 
 
-class PolicyCurrentView(APIView):
-    permission_classes = [require("policy.view")]
+class PolicyView(APIView):
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [require("policy.change")()]
+        return [require("policy.view")()]
 
     def get(self, request):
         policy = PolicyConfig.current()
         return Response(PolicyConfigSerializer(policy).data)
-
-
-class PolicyUpdateView(APIView):
-    permission_classes = [require("policy.change")]
 
     def post(self, request):
         serializer = PolicyCreateSerializer(data=request.data)
