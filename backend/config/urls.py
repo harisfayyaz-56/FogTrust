@@ -12,7 +12,9 @@ from django.urls import include, path
 urlpatterns = [
     path("api/v1/", include("core.urls")),
     path("api/v1/auth/", include("accounts.urls")),
+    path("api/v1/users/", include("accounts.users_urls")),
     path("api/v1/audit/", include("audit.urls")),
+    path("api/v1/", include("nodes.urls")),
 ]
 
 # The Django admin has its own login page without our rate limits or audit events,
