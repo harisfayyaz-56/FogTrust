@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { UserRole, AuthMeResponse } from '../types/api';
+import { USE_MOCK_DEFAULT, SESSION_EXPIRED_EVENT, SESSION_ACTIVITY_EVENT } from '../config/env';
 import * as api from '../services/api';
 
 interface AuthContextType {
@@ -18,12 +19,15 @@ interface AuthContextType {
   refreshMe: () => Promise<void>;
 }
 
+/**
+ * Mirrors backend accounts/permissions.py CAPABILITIES exactly. The server is
+ * the authority; these lists only drive which controls the UI shows.
+ */
 const DEFAULT_PERMISSIONS: Record<UserRole, string[]> = {
   admin: [
     'audit.verify',
     'audit.view',
     'decisions.view',
-    'nodes.enroll',
     'nodes.revoke',
     'nodes.view',
     'policy.change',
@@ -33,13 +37,9 @@ const DEFAULT_PERMISSIONS: Record<UserRole, string[]> = {
     'tasks.cancel',
     'tasks.submit',
     'tasks.view',
-    'tokens.cancel',
-    'tokens.create',
-    'tokens.view',
+    'tokens.manage',
     'trust.view',
-    'users.create',
     'users.manage',
-    'users.view',
   ],
   operator: [
     'decisions.view',
@@ -52,22 +52,37 @@ const DEFAULT_PERMISSIONS: Record<UserRole, string[]> = {
     'tasks.view',
     'trust.view',
   ],
-  viewer: [
-    'decisions.view',
-    'nodes.view',
-    'policy.view',
-    'tasks.view',
-    'trust.view',
-  ],
+  viewer: ['decisions.view', 'nodes.view', 'policy.view', 'tasks.view', 'trust.view'],
 };
+
+const DEFAULT_IDLE_TIMEOUT = 1800;
+
+function buildDemoUser(role: UserRole, username?: string): AuthMeResponse {
+  return {
+    username: username || `${role}1`,
+    role,
+    permissions: DEFAULT_PERMISSIONS[role],
+    session_idle_timeout: DEFAULT_IDLE_TIMEOUT,
+  };
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<AuthMeResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(1800);
+  // VITE_USE_MOCK=true starts offline; the default is real mode.
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(USE_MOCK_DEFAULT);
+  const [currentUser, setCurrentUser] = useState<AuthMeResponse | null>(() =>
+    USE_MOCK_DEFAULT ? buildDemoUser('admin') : null
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(!USE_MOCK_DEFAULT);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(
+    USE_MOCK_DEFAULT ? DEFAULT_IDLE_TIMEOUT : 0
+  );
+
+  const demoModeRef = useRef(isDemoMode);
+  useEffect(() => {
+    demoModeRef.current = isDemoMode;
+  }, [isDemoMode]);
 
   const role: UserRole = currentUser?.role || 'viewer';
   const permissions: string[] = currentUser?.permissions || (currentUser ? DEFAULT_PERMISSIONS[role] : []);
@@ -77,20 +92,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const me = await api.getMe();
       setCurrentUser(me);
-      setSecondsRemaining(me.session_idle_timeout || 1800);
-    } catch {
-      // If unauthenticated or offline
-      if (!isDemoMode) {
+      setSecondsRemaining(me.session_idle_timeout || DEFAULT_IDLE_TIMEOUT);
+    } catch (err: unknown) {
+      // Only a genuine 401 clears the session. A network outage keeps the
+      // current view instead of pretending the user was logged out.
+      if (err instanceof api.ApiError && err.status === 401) {
         setCurrentUser(null);
+        setSecondsRemaining(0);
       }
     } finally {
       setIsLoading(false);
     }
-  }, [isDemoMode]);
+  }, []);
 
+  // Restore the real session on load and whenever demo mode is switched off.
   useEffect(() => {
+    if (isDemoMode) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
     refreshMe();
-  }, [refreshMe]);
+  }, [isDemoMode, refreshMe]);
+
+  // A 401 from any real request means the server-side session is gone.
+  useEffect(() => {
+    const handleExpired = () => {
+      if (demoModeRef.current) return;
+      setCurrentUser(null);
+      setSecondsRemaining(0);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleExpired);
+  }, []);
+
+  // Every successful request resets the backend idle timeout, so mirror that
+  // in the visible countdown. Without this the dashboard would sign an active
+  // user out after the original timeout even though the server session is alive.
+  useEffect(() => {
+    const handleActivity = () => {
+      if (demoModeRef.current) return;
+      setSecondsRemaining(currentUser?.session_idle_timeout || DEFAULT_IDLE_TIMEOUT);
+    };
+    window.addEventListener(SESSION_ACTIVITY_EVENT, handleActivity);
+    return () => window.removeEventListener(SESSION_ACTIVITY_EVENT, handleActivity);
+  }, [currentUser]);
 
   // Session countdown timer
   useEffect(() => {
@@ -98,7 +144,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const interval = setInterval(() => {
       setSecondsRemaining((prev) => {
         if (prev <= 1) {
-          // Session expired
           setCurrentUser(null);
           return 0;
         }
@@ -110,19 +155,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (u: string, p: string) => {
     if (isDemoMode) {
-      const demoRole: UserRole = u.includes('admin') ? 'admin' : u.includes('operator') ? 'operator' : 'viewer';
-      setCurrentUser({
-        username: u,
-        role: demoRole,
-        permissions: DEFAULT_PERMISSIONS[demoRole],
-        session_idle_timeout: 1800,
-      });
-      setSecondsRemaining(1800);
+      const demoRole: UserRole = u.includes('admin')
+        ? 'admin'
+        : u.includes('operator')
+        ? 'operator'
+        : 'viewer';
+      setCurrentUser(buildDemoUser(demoRole, u));
+      setSecondsRemaining(DEFAULT_IDLE_TIMEOUT);
       return;
     }
 
     await api.login(u, p);
-    await refreshMe();
+    const me = await api.getMe();
+    setCurrentUser(me);
+    setSecondsRemaining(me.session_idle_timeout || DEFAULT_IDLE_TIMEOUT);
   };
 
   const logout = async () => {
@@ -134,23 +180,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     setCurrentUser(null);
+    setSecondsRemaining(0);
   };
 
   const switchDemoRole = (newRole: UserRole) => {
     setIsDemoMode(true);
-    setCurrentUser({
-      username: `${newRole}1`,
-      role: newRole,
-      permissions: DEFAULT_PERMISSIONS[newRole],
-      session_idle_timeout: 1800,
-    });
-    setSecondsRemaining(1800);
+    setCurrentUser(buildDemoUser(newRole));
+    setSecondsRemaining(DEFAULT_IDLE_TIMEOUT);
   };
 
   const setDemoMode = (enabled: boolean) => {
     setIsDemoMode(enabled);
-    if (enabled && !currentUser) {
-      switchDemoRole('admin');
+    if (enabled) {
+      // Keep the current role when moving from a real session into demo data.
+      setCurrentUser(buildDemoUser(currentUser?.role || 'admin'));
+      setSecondsRemaining(DEFAULT_IDLE_TIMEOUT);
+    } else {
+      // The effect above re-reads /auth/me to restore a real session, if any.
+      setCurrentUser(null);
+      setSecondsRemaining(0);
     }
   };
 
@@ -188,4 +236,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

@@ -13,6 +13,7 @@ import {
   TrustScoreRecord,
   HeartbeatRecord,
 } from '../types/api';
+import { apiUrl, SESSION_EXPIRED_EVENT, SESSION_ACTIVITY_EVENT } from '../config/env';
 import {
   MOCK_HEALTH,
   MOCK_NODES,
@@ -53,22 +54,31 @@ function getCookie(name: string): string | null {
 
 let cachedCsrfToken: string | null = null;
 
-export async function fetchCsrfToken(): Promise<string> {
+function readCsrfCookie(): string | null {
   const cookieVal = getCookie('csrftoken');
-  if (cookieVal) {
-    cachedCsrfToken = cookieVal;
-    return cookieVal;
+  if (cookieVal) cachedCsrfToken = cookieVal;
+  return cookieVal;
+}
+
+export async function fetchCsrfToken(force = false): Promise<string> {
+  if (!force) {
+    const cookieVal = readCsrfCookie();
+    if (cookieVal) return cookieVal;
   }
+
   try {
-    const res = await fetch('/api/v1/auth/csrf/', {
+    const res = await fetch(apiUrl('/api/v1/auth/csrf/'), {
       method: 'GET',
       credentials: 'include',
+      cache: 'no-store',
     });
     if (res.ok) {
-      const data = await res.json();
-      if (data && data.csrf_token) {
-        cachedCsrfToken = data.csrf_token;
-        return data.csrf_token;
+      const data = await res.json().catch(() => null);
+      const token =
+        (data && typeof data.csrf_token === 'string' && data.csrf_token) || readCsrfCookie();
+      if (token) {
+        cachedCsrfToken = token;
+        return token;
       }
     }
   } catch (err) {
@@ -77,11 +87,77 @@ export async function fetchCsrfToken(): Promise<string> {
   return cachedCsrfToken || '';
 }
 
-async function request<T>(
+const STATUS_CODES: Record<number, string> = {
+  400: 'VALIDATION_ERROR',
+  401: 'AUTH_REQUIRED',
+  403: 'PERMISSION_DENIED',
+  404: 'NOT_FOUND',
+  405: 'METHOD_NOT_ALLOWED',
+  406: 'NOT_ACCEPTABLE',
+  409: 'CONFLICT',
+  413: 'PAYLOAD_TOO_LARGE',
+  415: 'UNSUPPORTED_MEDIA_TYPE',
+  422: 'RESULT_INTEGRITY_FAILED',
+  429: 'RATE_LIMITED',
+  500: 'INTERNAL_ERROR',
+  502: 'SERVICE_UNAVAILABLE',
+  503: 'SERVICE_UNAVAILABLE',
+  504: 'SERVICE_UNAVAILABLE',
+};
+
+/**
+ * Turn a server or transport failure into a short, safe message. The backend
+ * never sends secrets or stack traces, and neither do we: unknown responses
+ * fall back to a generic sentence.
+ */
+function friendlyMessage(status: number, code: string, serverMessage?: string): string {
+  if (status === 401) {
+    if (code === 'AUTH_INVALID_CREDENTIALS' || code === 'AUTH_ACCOUNT_DISABLED') {
+      return 'Invalid username or password.';
+    }
+    if (code === 'AUTH_SESSION_EXPIRED' || code === 'AUTH_REQUIRED') {
+      return 'Your session has expired. Please sign in again.';
+    }
+    return 'You need to sign in to continue.';
+  }
+  if (status === 403) {
+    if (code === 'CSRF_FAILED') {
+      return 'Your security token expired. Refresh the page and try again.';
+    }
+    if (code === 'PERMISSION_DENIED') {
+      return 'Your role is not allowed to perform this action.';
+    }
+    return serverMessage || 'You are not allowed to perform this action.';
+  }
+  if (status === 413) return 'The request is too large. Reduce the payload and try again.';
+  if (status === 404) return 'The requested resource is not available on the FogTrust broker.';
+  if (status === 422) return 'The result failed an integrity check, so it was not accepted.';
+  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
+  if (status === 500) {
+    return 'The broker hit an internal error. Try again; if it persists, contact an administrator.';
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return 'The FogTrust broker is unavailable. Check that the backend is running.';
+  }
+  return serverMessage || 'The request could not be completed.';
+}
+
+function notifySessionExpired(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+}
+
+function notifyActivity(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SESSION_ACTIVITY_EVENT));
+  }
+}
+
+async function performRequest<T>(
   path: string,
-  options: RequestInit = {},
-  useDemoFallback = false,
-  fallbackData?: T
+  options: RequestInit,
+  allowCsrfRetry: boolean
 ): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
@@ -91,52 +167,125 @@ async function request<T>(
   }
 
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-    const csrf = cachedCsrfToken || getCookie('csrftoken') || (await fetchCsrfToken());
+    const csrf = cachedCsrfToken || readCsrfCookie() || (await fetchCsrfToken());
     if (csrf) {
       headers.set('X-CSRFToken', csrf);
     }
   }
 
+  let response: Response;
   try {
-    const response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       ...options,
       headers,
       credentials: 'include',
     });
-
-    // Check for rotated CSRF cookie
-    const freshCookie = getCookie('csrftoken');
-    if (freshCookie) {
-      cachedCsrfToken = freshCookie;
-    }
-
-    if (response.status === 204) {
-      return null as unknown as T;
-    }
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      if (data && data.error) {
-        throw new ApiError(
-          data.error.code || 'REQUEST_FAILED',
-          data.error.message || 'Request failed',
-          response.status,
-          data.error.request_id,
-          data.error.details
-        );
-      }
-      throw new ApiError('REQUEST_FAILED', `HTTP ${response.status}`, response.status);
-    }
-
-    return data as T;
-  } catch (err: unknown) {
-    if (useDemoFallback && fallbackData !== undefined) {
-      console.warn(`Falling back to demo data for ${path}:`, err);
-      return fallbackData;
-    }
-    throw err;
+  } catch {
+    throw new ApiError(
+      'NETWORK_ERROR',
+      'Cannot reach the FogTrust broker. Check that the backend is running and the API URL is correct.',
+      0
+    );
   }
+
+  // Login rotates the CSRF token, so remember the new cookie immediately.
+  readCsrfCookie();
+
+  // A successful request proves the session is alive and resets the server's
+  // idle timer, so the dashboard countdown must reset too.
+  if (response.ok) notifyActivity();
+
+  if (response.status === 204) {
+    return null as unknown as T;
+  }
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const code = data?.error?.code || STATUS_CODES[response.status] || 'REQUEST_FAILED';
+    const serverMessage = data?.error?.message;
+
+    // A stale CSRF cookie is recoverable: fetch a fresh token and retry once.
+    if (response.status === 403 && code === 'CSRF_FAILED' && allowCsrfRetry) {
+      await fetchCsrfToken(true);
+      return performRequest<T>(path, options, false);
+    }
+
+    if (
+      response.status === 401 &&
+      code !== 'AUTH_INVALID_CREDENTIALS' &&
+      !path.includes('/auth/login/')
+    ) {
+      notifySessionExpired();
+    }
+
+    throw new ApiError(
+      code,
+      friendlyMessage(response.status, code, serverMessage),
+      response.status,
+      data?.error?.request_id,
+      data?.error?.details
+    );
+  }
+
+  return data as T;
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  useDemoFallback = false,
+  fallbackData?: T
+): Promise<T> {
+  // Demo mode is offline by definition. Return the fixtures immediately so a
+  // running broker with a live session can never leak real data into the demo,
+  // and so demo mode makes no network requests at all.
+  if (useDemoFallback && fallbackData !== undefined) {
+    return fallbackData;
+  }
+
+  // Real mode always surfaces errors so a broken backend is never disguised.
+  return performRequest<T>(path, options, true);
+}
+
+// ---------------------------------------------------------------------------
+// Response normalisation
+// ---------------------------------------------------------------------------
+function asList<T>(value: PaginatedResponse<T> | T[] | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  return value?.results ?? [];
+}
+
+function normalizeTrustRecord(record: TrustScoreRecord): TrustScoreRecord {
+  const rules = Array.isArray(record.rules_fired) ? record.rules_fired : [];
+  const explanation =
+    record.explanation ||
+    rules
+      .map((rule) => rule.reason)
+      .filter((reason): reason is string => typeof reason === 'string' && reason.length > 0)
+      .join(' ') ||
+    `Score changed from ${record.previous_score} to ${record.score}.`;
+  return { ...record, rules_fired: rules, explanation };
+}
+
+function normalizePolicy(raw: PolicyConfig & { changed_by_username?: string }): PolicyConfig {
+  return {
+    ...raw,
+    changed_by: raw.changed_by || raw.changed_by_username || 'system',
+  };
+}
+
+function normalizeTask(task: Task & { assigned_node_name?: string | null }): Task {
+  return { ...task, assigned_node: task.assigned_node ?? null };
+}
+
+function normalizeToken(raw: EnrollmentToken): EnrollmentToken {
+  return {
+    ...raw,
+    created_at: raw.created_at || new Date().toISOString(),
+    used_at: raw.used_at ?? null,
+    cancelled_at: raw.cancelled_at ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -215,12 +364,15 @@ export async function getNodeTrustHistory(
   nodeId: string,
   isDemo = false
 ): Promise<TrustScoreRecord[]> {
-  return request<TrustScoreRecord[]>(
+  // The backend returns a standard paginated envelope; older demo fixtures
+  // (and the contract wording) use a bare array. Accept both.
+  const response = await request<PaginatedResponse<TrustScoreRecord> | TrustScoreRecord[]>(
     `/api/v1/nodes/${nodeId}/trust/`,
     {},
     isDemo,
     MOCK_TRUST_HISTORY[nodeId] || []
   );
+  return asList(response).map(normalizeTrustRecord);
 }
 
 // ---------------------------------------------------------------------------
@@ -303,14 +455,23 @@ export async function getEnrollmentTokens(
       return true;
     }),
   };
-  return request<PaginatedResponse<EnrollmentToken>>(`/api/v1/enrollment-tokens/${query}`, {}, isDemo, fallback);
+  const response = await request<PaginatedResponse<EnrollmentToken>>(
+    `/api/v1/enrollment-tokens/${query}`,
+    {},
+    isDemo,
+    fallback
+  );
+  return { ...response, results: (response.results || []).map(normalizeToken) };
 }
 
 export async function createEnrollmentToken(label: string, expiresInMinutes: number = 15): Promise<EnrollmentToken> {
-  return request<EnrollmentToken>('/api/v1/enrollment-tokens/', {
+  // The creation response intentionally contains only id/label/token/expires_at;
+  // fill the list-only fields so the UI never sees undefined.
+  const created = await request<EnrollmentToken>('/api/v1/enrollment-tokens/', {
     method: 'POST',
     body: JSON.stringify({ label, expires_in_minutes: expiresInMinutes }),
   });
+  return normalizeToken(created);
 }
 
 export async function cancelEnrollmentToken(id: string): Promise<void> {
@@ -414,7 +575,13 @@ export async function getTasks(
     }),
   };
 
-  return request<PaginatedResponse<Task>>(`/api/v1/tasks/list/?${query.toString()}`, {}, isDemo, fallback);
+  const response = await request<PaginatedResponse<Task>>(
+    `/api/v1/tasks/list/?${query.toString()}`,
+    {},
+    isDemo,
+    fallback
+  );
+  return { ...response, results: (response.results || []).map(normalizeTask) };
 }
 
 export async function submitTask(taskData: {
@@ -446,14 +613,21 @@ export async function cancelTask(taskId: string): Promise<void> {
 // Policy
 // ---------------------------------------------------------------------------
 export async function getPolicy(isDemo = false): Promise<PolicyConfig> {
-  return request<PolicyConfig>('/api/v1/policy/', {}, isDemo, MOCK_POLICY);
+  const policy = await request<PolicyConfig & { changed_by_username?: string }>(
+    '/api/v1/policy/',
+    {},
+    isDemo,
+    MOCK_POLICY
+  );
+  return normalizePolicy(policy);
 }
 
 export async function updatePolicy(values: Record<string, unknown>, changeReason: string): Promise<PolicyConfig> {
-  return request<PolicyConfig>('/api/v1/policy/', {
+  const policy = await request<PolicyConfig & { changed_by_username?: string }>('/api/v1/policy/', {
     method: 'POST',
     body: JSON.stringify({ values, change_reason: changeReason }),
   });
+  return normalizePolicy(policy);
 }
 
 // ---------------------------------------------------------------------------

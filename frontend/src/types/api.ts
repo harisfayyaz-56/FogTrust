@@ -38,6 +38,9 @@ export interface NodeItem {
 export interface EnrollmentToken {
   id: string;
   label: string;
+  /** Server-computed state, present in list responses. */
+  status?: 'pending' | 'used' | 'expired' | 'cancelled';
+  created_by?: string | null;
   created_at: string;
   expires_at: string;
   used_at: string | null;
@@ -156,6 +159,8 @@ export interface Task {
   priority: number;
   status: 'queued' | 'assigned' | 'completed' | 'failed' | 'cancelled';
   assigned_node: string | null;
+  /** Convenience field supplied by the backend task serializer. */
+  assigned_node_name?: string | null;
   attempts: number;
   max_attempts: number;
   idempotency_key: string;
@@ -188,6 +193,8 @@ export interface PolicyConfig {
     [key: string]: unknown;
   };
   changed_by?: string;
+  /** The backend serializes this field; the client maps it to changed_by. */
+  changed_by_username?: string;
   changed_at: string;
   change_reason: string;
 }

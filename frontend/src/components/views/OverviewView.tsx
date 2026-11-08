@@ -27,12 +27,16 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
   const [chainReport, setChainReport] = useState<AuditVerifyReport | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // A single unavailable endpoint (for example tasks before the backend routes
+  // it) must not hide the data that did load. It becomes a warning instead.
+  const [partialWarning, setPartialWarning] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
     setIsLoading(true);
     setLoadError(null);
+    setPartialWarning(null);
 
     Promise.allSettled([
       getNodes({}, isDemoMode),
@@ -64,7 +68,10 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
         ]
           .filter(Boolean)
           .join(', ');
-        setLoadError(`Some dashboard data could not be loaded (${failedNames}).`);
+        const firstFailure = coreFailures[0] as PromiseRejectedResult;
+        const reason =
+          firstFailure.reason instanceof Error ? firstFailure.reason.message : 'Request failed.';
+        setPartialWarning(`Some dashboard data could not be loaded (${failedNames}): ${reason}`);
       }
       setIsLoading(false);
     });
@@ -109,6 +116,13 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
           </button>
         </div>
       </div>
+
+      {partialWarning && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{partialWarning}</span>
+        </div>
+      )}
 
       {loadError ? (
         <ErrorState title="Could not load the security dashboard" message={loadError} onRetry={refresh} />
