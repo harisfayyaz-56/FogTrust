@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.2 (Week 3) |
+| Version | 0.3 (Week 4) |
 | Author | Member 2 |
 | Implements | [api-contract.md](api-contract.md) sections 2.2, 5.5 and 5.7 (contract version 0.2), and the enrollment proof in 5.4 |
 | Code | `backend/fogtrust_crypto/` (`keys.py`, `node_auth.py`, `replay.py`, `heartbeat.py`, `results.py`, `result.py`, `node_sim.py`) |
@@ -24,6 +24,8 @@ string_to_sign = METHOD "\n" PATH "\n" TIMESTAMP "\n" NONCE "\n" hex(SHA-256(bod
 | body | The **raw bytes** sent, hashed with SHA-256. An empty body is hashed too | The node signs what it sends; the server hashes what it received. No re-serialising |
 
 A value containing a newline, a space or a non-ASCII character is refused before signing or verifying, so one field can never be read as part of another. The signature is Ed25519, base64 in `X-Node-Signature` (64 bytes decoded).
+
+**One request, one spelling.** Python's parsers are forgiving: `uuid.UUID` accepts upper case, braces and no hyphens, `int` accepts leading zeros, and base64 decoding accepts different last characters that decode to the same bytes. Each of those would let one signed request appear as many different header strings. The verifier therefore accepts only the canonical form: a lower-case hyphenated node id, a decimal timestamp without leading zeros, and a canonical base64 signature. The fuzz test (`test_fuzz.py`) found the node-id case and a crash on a non-string method; the other two were fixed in the same change and each has its own test.
 
 ## 2. Check order
 
@@ -70,12 +72,15 @@ Not yet run against real models, because the `nodes` app does not exist yet.
 
 ```python
 from fogtrust_crypto.node_auth import NodeInfo
-from fogtrust_crypto.heartbeat import verify_heartbeat
+from fogtrust_crypto.heartbeat import MAX_HEARTBEAT_BODY_BYTES, verify_heartbeat
+from fogtrust_crypto.node_auth import declared_length_too_large
 
 def lookup(node_id):
     node = Node.objects.filter(id=node_id).first()
     return NodeInfo(node.public_key, node.status) if node else None
 
+if declared_length_too_large(request.headers.get("Content-Length"), MAX_HEARTBEAT_BODY_BYTES):
+    raise APIError(ErrorCode.PAYLOAD_TOO_LARGE)  # refuse before reading the body
 raw_body = request.body  # read BEFORE touching request.data
 result = verify_heartbeat(request.headers, request.method, request.get_full_path(),
                           raw_body, lookup, DatabaseReplayStore(),
@@ -145,7 +150,13 @@ Attacker behaviours (use only on your own local broker):
 
 `keys/` is git-ignored. The state file next to the key holds the node id, the heartbeat counter and (for replay demos) one captured request. The counter is saved **before** each send, so a number is never reused. On Windows, file mode bits do nothing: keep `keys/` in a folder only your account can read, and not in OneDrive.
 
-## 8. Known limits (for the limitations statement)
+## 8. Early exits and timing
+
+The verifier stops at the first failed check. Measured (`crypto-measurements.md`, section C3), an unknown or revoked node is rejected about 100 microseconds faster than a request with the wrong key, because the signature check is skipped (about 6 µs against about 107 µs in the engine, about 125 µs apart over loopback HTTP). The specific error code already tells the caller the same thing, so equalising the time alone would hide nothing.
+
+**Decision: accepted.** Node ids are random 122-bit UUIDs, so a caller must already hold an id to learn that it exists or is revoked. The early exit is also useful: it makes a flood of requests with unknown ids cheaper for the server than a flood with bad signatures. Hiding the difference would need two changes together (the same client code for unknown, missing and invalid, plus a dummy signature check on the unknown path) and would remove the clear "revoked" signal a legitimate node benefits from. If the team prefers masking, the change is in the API layer's code mapping, not in the engine.
+
+## 9. Known limits (for the limitations statement)
 
 - A stolen node private key is full impersonation until an admin revokes the node.
 - A node that loses its counter file sends counters the server rejects; it must be re-enrolled.

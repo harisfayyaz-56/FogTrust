@@ -73,7 +73,9 @@ Rules that make the scheme unambiguous (added in 0.2):
 - A state change happens only after the checks that precede it: steps 1 to 4 touch nothing, and the counter moves only when every check has passed. A nonce is remembered once step 6 passes, so a request that fails step 7 or 8 still burns its nonce (harmless: an honest node never reuses one).
 - Nonce and counter updates must be atomic (`unique (node, nonce)`; `UPDATE ... WHERE last_counter < new`). Check-then-store is a race.
 - The nonce is kept until `timestamp + timestamp_window_s`, then purged.
-- The client sees only the generic message from `errors.py`. The precise code goes to the audit log and the Decision.
+- The client sees the generic **message** from `errors.py`, but the `code` in the response body is the specific one (`NODE_UNKNOWN` and `NODE_SIGNATURE_INVALID` are both 401, `NODE_REVOKED` is 403). A caller who already holds a node id can therefore learn whether it exists or is revoked. Node ids are random UUIDs, so this is an accepted risk (`threat-model/crypto-engine.md`, CR-7); the full reason also goes to the audit log and the Decision.
+- Every header value must be in canonical form, so one request has exactly one valid spelling: `X-Node-Id` is a lower-case hyphenated UUID, `X-Node-Timestamp` is a decimal integer without leading zeros, `X-Node-Signature` is the canonical base64 of 64 bytes. Anything else is refused (`NODE_UNKNOWN` for the id, `NODE_SIGNATURE_INVALID` for the others).
+- A view should compare `Content-Length` with the endpoint's limit (`declared_length_too_large`) and refuse before reading the body.
 
 Node endpoints do not use session authentication, so CSRF does not apply to them.
 
