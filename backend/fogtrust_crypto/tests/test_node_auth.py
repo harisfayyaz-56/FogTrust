@@ -268,3 +268,57 @@ def test_decisions_never_contain_secrets_or_full_signature(node):
 
 def test_latency_is_measured(node):
     assert verify(node, node.headers()).latency_ms >= 0
+
+# --------------------------------- found by the fuzz test (test_fuzz.py): one request, one spelling
+
+
+def test_uppercase_node_id_is_not_accepted_as_the_same_node(node):
+    headers = node.headers()
+    headers[HEADER_NODE_ID] = node.id.upper()
+    assert verify(node, headers).reason_code == codes.NODE_UNKNOWN
+
+
+@pytest.mark.parametrize("spelling", [lambda i: "{" + i + "}", lambda i: i.replace("-", ""), lambda i: "urn:uuid:" + i, lambda i: " " + i])
+def test_other_uuid_spellings_are_not_accepted(node, spelling):
+    headers = node.headers()
+    headers[HEADER_NODE_ID] = spelling(node.id)
+    assert verify(node, headers).reason_code == codes.NODE_UNKNOWN
+
+
+def test_timestamp_with_leading_zeros_is_not_accepted(node):
+    headers = node.headers(timestamp=1763547631)
+    headers[HEADER_TIMESTAMP] = "0" + headers[HEADER_TIMESTAMP]
+    assert verify(node, headers).reason_code == codes.NODE_SIGNATURE_INVALID
+
+
+def test_signature_with_non_canonical_base64_is_not_accepted(node):
+    """The last base64 character carries 4 unused bits. Changing them decodes to the same signature,
+    so without a canonical check one signature would have 16 valid spellings."""
+    headers = node.headers()
+    sig = headers[HEADER_SIGNATURE]
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    last = sig[-3]  # the character before the "=="
+    variant = alphabet[alphabet.index(last) ^ 1]
+    assert base64.b64decode(sig[:-3] + variant + "==") == base64.b64decode(sig)  # same bytes, different text
+    headers[HEADER_SIGNATURE] = sig[:-3] + variant + "=="
+    assert verify(node, headers).reason_code == codes.NODE_SIGNATURE_INVALID
+
+
+@pytest.mark.parametrize("method", [{}, [], None, 5, b"POST"])
+def test_non_string_method_raises_value_error_not_type_error(method):
+    with pytest.raises(ValueError):
+        build_string_to_sign(method, PATH, 1, NONCE, BODY)
+
+
+# ------------------------------------------- refuse oversized bodies before reading them
+
+
+@pytest.mark.parametrize(
+    "declared,limit,too_large",
+    [(None, 2048, False), ("", 2048, False), ("0", 2048, False), ("2048", 2048, False), ("2049", 2048, True),
+     ("99999999999999999999", 2048, True), ("abc", 2048, True), ("-1", 2048, True), ("12 ", 2048, True), ("\u0663", 2048, True), (2048, 2048, True)],
+)
+def test_declared_length_check(declared, limit, too_large):
+    from fogtrust_crypto.node_auth import declared_length_too_large
+
+    assert declared_length_too_large(declared, limit) is too_large
