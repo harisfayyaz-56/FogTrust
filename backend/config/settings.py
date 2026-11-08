@@ -61,6 +61,8 @@ INSTALLED_APPS = [
     # FogTrust apps
     "core",
     "accounts",
+    "audit",
+    "nodes",
 ]
 
 MIDDLEWARE = [
@@ -101,6 +103,12 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": _sqlite_path if _sqlite_path.is_absolute() else BASE_DIR / _sqlite_path,
+        "OPTIONS": {
+            # Writers take the lock at BEGIN, so "read last audit event, insert next"
+            # can never interleave between two requests (audit/services.py).
+            "transaction_mode": "IMMEDIATE",
+            "timeout": 20,
+        },
     }
 }
 
@@ -129,6 +137,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # ---------------------------------------------------------------------------
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # survives server restart
 SESSION_COOKIE_AGE = env_int("SESSION_IDLE_TIMEOUT_SECONDS", 1800)
+# Hard limit after login, however active the session is (accounts/authentication.py).
+SESSION_ABSOLUTE_TIMEOUT_SECONDS = env_int("SESSION_ABSOLUTE_TIMEOUT_SECONDS", 8 * 3600)
 SESSION_SAVE_EVERY_REQUEST = True  # sliding window: expires after N seconds of inactivity
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True  # JavaScript cannot read the session cookie
@@ -166,7 +176,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = DATA_UPLOAD_MAX_MEMORY_SIZE
 # ---------------------------------------------------------------------------
 REST_FRAMEWORK = {
     # Humans log in with a session cookie. Nodes use signed requests (added in Week 3).
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["accounts.authentication.FogTrustSessionAuthentication"],
     # Deny by default: every endpoint needs a logged-in user unless it opts out explicitly.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
@@ -180,11 +190,16 @@ REST_FRAMEWORK = {
         "anon": "60/min",
         "user": "600/min",
         # Scoped rates used by specific endpoints (Week 2 and 3)
-        "login": "5/min",
-        "enroll": "10/min",
+        "login": os.environ.get("LOGIN_RATE_LIMIT", "5/min"),
+        "login_username": os.environ.get("LOGIN_USERNAME_RATE_LIMIT", "20/hour"),
+        "enroll": os.environ.get("ENROLL_RATE_LIMIT", "10/min"),
         "heartbeat": "120/min",
     },
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    # Throttles identify a client by REMOTE_ADDR only. With DRF's default (None) the
+    # client-supplied X-Forwarded-For header is trusted, so one attacker could rotate it
+    # and never hit the login or enrollment limit. Raise this only behind a real proxy.
+    "NUM_PROXIES": env_int("TRUSTED_PROXY_COUNT", 0),
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 25,
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
 }
@@ -196,6 +211,21 @@ CACHES = {
         "LOCATION": "fogtrust",
     }
 }
+
+# ---------------------------------------------------------------------------
+# Nodes and enrollment (Member 1)
+# ---------------------------------------------------------------------------
+# Trust score a newly enrolled node starts with. Member 3's policy engine owns the
+# score afterwards; this is only the starting value.
+INITIAL_TRUST_SCORE = min(100, max(0, env_int("INITIAL_TRUST_SCORE", 100)))
+ENROLLMENT_TOKEN_DEFAULT_MINUTES = 15
+ENROLLMENT_TOKEN_MAX_MINUTES = 24 * 60
+ENROLL_MAX_BODY_BYTES = 4096  # enrollment is public, so it gets a much smaller cap than 256 KB
+
+# Long-term X25519 key for result encryption (FR-5). A file readable only by its owner,
+# created with `python manage.py generate_server_key`. Its PUBLIC half is returned to
+# nodes at enrollment as `server_public_key`. Empty means "not configured yet".
+RESULT_KEY_FILE = os.environ.get("FOGTRUST_RESULT_KEY_FILE", "").strip()
 
 # ---------------------------------------------------------------------------
 # Internationalisation and time

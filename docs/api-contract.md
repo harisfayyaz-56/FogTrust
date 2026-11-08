@@ -197,23 +197,23 @@ the server still checks every request.
 
 | Method | Path | Wk | Purpose |
 |---|---|---|---|
-| GET | `/users/` | 3 | List users (`?role=`) |
-| POST | `/users/` | 3 | Create a user |
-| PATCH | `/users/{id}/` | 3 | Change role or disable (`is_active`) |
+| GET | `/users/` | 3 ✅ | List users (`?role=`) |
+| POST | `/users/` | 3 ✅ | Create a user (role defaults to `viewer`; password checked by Django's validators) |
+| PATCH | `/users/{id}/` | 3 ✅ | Change `role` and/or `is_active`. Only those two fields are accepted |
 
-An admin cannot remove their own admin role or disable themselves (prevents lock-out).
+An admin cannot remove their own admin role or disable themselves (prevents lock-out): `409 CONFLICT`, audited as a failure. A role change or disable takes effect on the user's very next request, even in an open session.
 
 ### 5.4 Enrollment and nodes — Member 1
 
 | Method | Path | Auth | Wk | Purpose |
 |---|---|---|---|---|
-| POST | `/enrollment-tokens/` | admin | 3 | Create a one-time token |
-| GET | `/enrollment-tokens/` | admin | 3 | List tokens (never shows token values) |
-| POST | `/enrollment-tokens/{id}/cancel/` | admin | 3 | Cancel an unused token |
-| POST | `/nodes/enroll/` | node with token, throttled 10/min | 3 | FR-1: register a node |
-| GET | `/nodes/` | any user | 3 | List nodes (`?status=`, `?min_trust=`, `?search=`) |
-| GET | `/nodes/{id}/` | any user | 3 | Node detail |
-| POST | `/nodes/{id}/revoke/` | admin | 3 | FR-6: revoke with confirmation |
+| POST | `/enrollment-tokens/` | admin | 3 ✅ | Create a one-time token |
+| GET | `/enrollment-tokens/` | admin | 3 ✅ | List tokens (`?status=pending|used|expired|cancelled`; never shows token values) |
+| POST | `/enrollment-tokens/{id}/cancel/` | admin | 3 ✅ | Cancel an unused token (`409 CONFLICT` if already used or cancelled) |
+| POST | `/nodes/enroll/` | node with token, throttled 10/min per IP, body max 4 KB | 3 ✅ | FR-1: register a node |
+| GET | `/nodes/` | any user | 3 ✅ | List nodes (`?status=`, `?min_trust=`, `?search=`) |
+| GET | `/nodes/{id}/` | any user | 3 ✅ | Node detail |
+| POST | `/nodes/{id}/revoke/` | admin | 3 ✅ | FR-6: revoke with confirmation |
 
 **POST `/enrollment-tokens/`**
 
@@ -243,9 +243,10 @@ proof = Ed25519_sign(private_key, "fogtrust-enroll-v1\n" + token + "\n" + name +
   "proof": "base64 of 64-byte signature"
 }
 
-// 201
-{"node_id": "a7f3c2d1-...", "name": "gateway-03", "status": "active",
- "key_fingerprint": "5e88...", "enrolled_at": "2026-11-19T10:05:00Z"}
+// 201 (Cache-Control: no-store)
+{"node_id": "a7f3c2d1-...", "name": "gateway-03", "status": "active", "capacity": 4,
+ "key_fingerprint": "5e88...", "enrolled_at": "2026-11-19T10:05:00Z",
+ "server_public_key": "base64 X25519 key, 44 chars, or null until generate_server_key has been run"}
 ```
 
 | Failure | Code returned to client | Code in audit log | HTTP |
@@ -262,8 +263,10 @@ All token failures look identical to the client, so an attacker cannot tell a re
 token from a made-up one. The precise reason is recorded in the audit event's `reason_code`,
 which is what the T1 tests and the admin's evidence view check.
 
-Order of checks: validate body → token → proof of possession → key unused → name unused →
-create node and mark token used in **one transaction**.
+Order of checks: size cap (4 KB) → validate body shape → token → key well-formed (`ENROLL_KEY_INVALID`) →
+proof of possession → key unused → name unused → create node and mark token used in **one transaction**,
+together with the audit event and the Decision. A failed attempt never uses up the token. `capacity` is optional (default 4).
+Every refusal, including bad JSON, bad fields and oversized bodies, is audited as `node.enroll` / `failure`.
 
 **GET `/nodes/{id}/`**
 
@@ -366,7 +369,7 @@ A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original t
 
 | Method | Path | Auth | Wk | Purpose |
 |---|---|---|---|---|
-| GET | `/decisions/` | any user | 3 | Evidence view (`?subject_type=`, `?decision=`, `?reason_code=`, `?since=`) |
+| GET | `/decisions/` | any user | 3 ✅ | Evidence view (`?subject_type=`, `?decision=`, `?reason_code=`, `?since=`) |
 | GET | `/audit/` | admin | 2 ✅ | Audit log, newest first (`?action=`, `?actor=`, `?outcome=`, `?reason_code=`, `?since=`, `?until=`) |
 | POST | `/audit/verify/` | admin | 2 ✅ | Recompute the hash chain (also: `python manage.py verify_audit_chain`) |
 
@@ -448,5 +451,5 @@ mention it in the PR description.
 |---|---|---|---|
 | 2026-11-05 | 0.1 | First draft | Member 1 |
 | 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers return `NODE_SIGNATURE_INVALID` (see node-signing-spec.md) | Member 2 |
-| 2026-11-07 | 0.3 | Section 2.2: canonical header spellings (lower-case UUID, no leading zeros, canonical base64); the client sees the specific `code`, not only the generic message (documented as accepted risk); `Content-Length` pre-check | Member 2 |
 | 2026-11-06 | 0.3 | Auth endpoints built: logout returns 204, `/me` adds `session_idle_timeout`, 8-hour absolute session limit, per-username login limit; audit verify adds `problem` | Member 1 |
+| 2026-11-07 | 0.4 | Week 3 built (Member 1): enrollment tokens, `POST /nodes/enroll/`, node list and detail, revocation, `/users/`, `/decisions/`. Enrollment response adds `capacity` and `server_public_key`; node responses add `revoke_source`; audit action `user.enable`; settings `NUM_PROXIES=0` so throttles cannot be bypassed with a forged `X-Forwarded-For` | Member 1 |

@@ -105,3 +105,24 @@ def test_every_catalog_entry_is_well_formed():
         assert code.isupper()
         assert 400 <= status <= 599
         assert message and len(message) < 120
+
+
+def test_validation_errors_never_echo_input(api_client):
+    payload = "<script>alert(1)</script>"
+    response = api_client.post("/t/choice/", {"role": payload}, format="json")
+
+    error = assert_envelope(response, 400, "VALIDATION_ERROR")
+    assert error["details"]["fields"]["role"] == ["Not a valid choice."]
+    assert b"script" not in response.content
+
+
+def test_unknown_fields_are_rejected_without_echoing_them(api_client):
+    response = api_client.post("/t/choice/", {"role": "admin", "is_superuser": True}, format="json")
+
+    assert_envelope(response, 400, "VALIDATION_ERROR")
+    assert b"is_superuser" not in response.content
+
+
+def test_non_object_body_is_rejected(api_client):
+    response = api_client.post("/t/choice/", ["admin"], format="json")
+    assert_envelope(response, 400, "VALIDATION_ERROR")
