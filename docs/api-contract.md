@@ -325,7 +325,7 @@ on that node are returned to the queue (Member 3).
 | GET | `/tasks/` | any user | 2 | List (`?status=`, `?node=`) |
 | GET | `/tasks/{id}/` | any user | 2 | Detail with assignment decision |
 | POST | `/tasks/{id}/cancel/` | operator, admin | 3 | Cancel a queued task |
-| GET | `/node-api/tasks/next/` | signed node | 3 | Node pulls its assigned task |
+| GET | `/node-api/tasks/next/` | signed node (verified, section 2.2), 120/min per node | 3 ✅ | Node pulls its own assigned task. A staff session cookie or a bare `X-Node-Id` is **not** accepted |
 
 A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original task with
 `409 DUPLICATE_SUBMISSION` (T-final: repeated submission).
@@ -453,3 +453,4 @@ mention it in the PR description.
 | 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers return `NODE_SIGNATURE_INVALID` (see node-signing-spec.md) | Member 2 |
 | 2026-11-06 | 0.3 | Auth endpoints built: logout returns 204, `/me` adds `session_idle_timeout`, 8-hour absolute session limit, per-username login limit; audit verify adds `problem` | Member 1 |
 | 2026-11-07 | 0.4 | Week 3 built (Member 1): enrollment tokens, `POST /nodes/enroll/`, node list and detail, revocation, `/users/`, `/decisions/`. Enrollment response adds `capacity` and `server_public_key`; node responses add `revoke_source`; audit action `user.enable`; settings `NUM_PROXIES=0` so throttles cannot be bypassed with a forged `X-Forwarded-For` | Member 1 |
+| 2026-11-08 | 0.5 | Week 4 hardening (Member 1): `/node-api/tasks/next/` now verifies the signed request (until now it trusted a bare `X-Node-Id` header); signed node requests run signature, timestamp window (policy `timestamp_window_s`, bounded 5 to 300 s, default 30) and one-time nonce, backed by the database so replays stay refused after a restart; refusals audited as `node.auth` / failure; a failed signature never changes a node's trust score; new nodes start at the policy's `initial_score`; auto-revocation goes through the revocation service (so `node_revoked` fires); settings `NODE_REQUEST_RATE_LIMIT`, `NODE_AUTH_FAILED_RATE_LIMIT` | Member 1 |

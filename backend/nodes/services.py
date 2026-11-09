@@ -21,6 +21,7 @@ import time
 import uuid
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -28,6 +29,8 @@ from audit.services import log_event
 from core.decisions import record_decision
 from core.errors import APIError, ErrorCode
 from fogtrust_crypto.keys import CryptoKeyError, public_key_fingerprint, public_key_from_b64, verify_enrollment_proof
+
+from trust.models import PolicyConfig
 
 from .models import EnrollmentToken, Node
 from .signals import node_revoked
@@ -119,6 +122,8 @@ class _Trace:
 
     def __init__(self):
         self.rules: list[dict] = []
+        self.policy_version: int | None = None
+        self.initial_score: int | None = None
         self._started = time.perf_counter()
 
     def rule(self, name: str, passed: bool, detail: str) -> None:
@@ -195,9 +200,12 @@ def enroll_node(*, raw_token: str, name: str, public_key: str, capacity: int, pr
                     "node_name": node.name,
                     "token_id": str(node.enrolled_via_id),
                     "key_fingerprint_prefix": node.key_fingerprint[:8],
+                    "initial_trust_score": node.trust_score,
                 },
                 engine_name=ENROLL_ENGINE[0],
                 engine_version=ENROLL_ENGINE[1],
+                policy_version=trace.policy_version,
+                thresholds={"initial_score": trace.initial_score},
                 request=request,
                 latency_ms=trace.latency_ms,
             )
@@ -260,7 +268,15 @@ def _enroll(trace: _Trace, raw_token, name, public_key, capacity, proof) -> Node
         raise EnrollmentRefused(ErrorCode.NODE_NAME_TAKEN, ErrorCode.NODE_NAME_TAKEN, "A node with this name already exists.", str(token.id))
     trace.rule("name_unused", True, "no node uses this name")
 
-    # 6. create the node and redeem the token together
+    # 6. the starting trust score comes from the administrator's policy, not from this module
+    policy = PolicyConfig.current()
+    initial_score = policy.values.get("initial_score", settings.INITIAL_TRUST_SCORE)
+    if not isinstance(initial_score, int) or isinstance(initial_score, bool) or not 0 <= initial_score <= 100:
+        initial_score = settings.INITIAL_TRUST_SCORE
+    trace.policy_version, trace.initial_score = policy.version, initial_score
+    trace.rule("initial_trust_from_policy", True, f"policy v{policy.version} sets the starting trust score to {initial_score}")
+
+    # 7. create the node and redeem the token together
     try:
         with transaction.atomic():  # savepoint: a unique-constraint race must not poison the outer transaction
             node = Node.objects.create(
@@ -269,6 +285,7 @@ def _enroll(trace: _Trace, raw_token, name, public_key, capacity, proof) -> Node
                 public_key=public_key,
                 key_fingerprint=fingerprint,
                 capacity=capacity,
+                trust_score=initial_score,
                 enrolled_at=now,
                 enrolled_via=token,
             )

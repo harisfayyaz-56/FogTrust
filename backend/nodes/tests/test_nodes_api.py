@@ -19,7 +19,7 @@ class TestDetail:
         assert response.status_code == 200
         body = response.json()
         assert body["id"] == str(node.id) and body["name"] == "gateway-03" and body["status"] == "active"
-        assert body["capacity"] == 4 and body["current_load"] == 0 and body["trust_score"] == 100
+        assert body["capacity"] == 4 and body["current_load"] == 0 and body["trust_score"] == 80
         assert body["revoked_at"] is None and body["revoke_reason"] is None and body["revoked_by"] is None
         assert body["key_fingerprint"] == node.key_fingerprint
 
