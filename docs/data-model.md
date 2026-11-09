@@ -111,7 +111,7 @@ Raw token format: 32 random bytes from `secrets.token_urlsafe(32)` (about 43 cha
 | last_seen_at | datetime | nullable | M2 (accepted heartbeat) |
 | last_counter | bigint | default 0 | M2 (replay defence) |
 | enrolled_at | datetime | | M1 |
-| enrolled_via | FK EnrollmentToken | | M1 |
+| enrolled_via | FK EnrollmentToken, nullable | always set by the enrollment service; nullable only so fixtures can create nodes directly | M1 |
 | revoked_at | datetime | nullable | M1 |
 | revoked_by | FK User | nullable (null = automatic revocation) | M1 |
 | revoke_reason | varchar(500) | required when revoked | M1 |
@@ -337,6 +337,7 @@ edits would need the latest hash stored somewhere else (see the limitations stat
 | `node.enroll` | M1 | success, failure |
 | `node.revoke` | M1 | success, failure, denied |
 | `node.request_rejected` | M2 | failure |
+| `node.auth` | M1 | failure only (a signed node request refused: missing headers, unknown or revoked node, bad signature, stale, replayed). Actor is `anonymous` because the node id is only a claim until the signature verifies. Past 30 failures a minute from one client, one summary `request.rate_limited` event a minute replaces the per-request rows |
 | `heartbeat.rejected` | M2 | failure (accepted heartbeats are not audited, to keep the log readable; they are in the Heartbeat table) |
 | `result.integrity_failed` | M2 | failure |
 | `task.submit`, `task.assign`, `task.reassign`, `task.fail` | M3 | success, failure |

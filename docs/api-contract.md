@@ -331,7 +331,7 @@ on that node are returned to the queue (Member 3).
 | GET | `/tasks/` | any user | 2 | List (`?status=`, `?node=`) |
 | GET | `/tasks/{id}/` | any user | 2 | Detail with assignment decision |
 | POST | `/tasks/{id}/cancel/` | operator, admin | 3 | Cancel a queued task |
-| GET | `/node-api/tasks/next/` | signed node | 3 | Node pulls its assigned task |
+| GET | `/node-api/tasks/next/` | signed node (verified, section 2.2), 120/min per node | 3 ✅ | Node pulls its own assigned task. A staff session cookie or a bare `X-Node-Id` is **not** accepted |
 
 A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original task with
 `409 DUPLICATE_SUBMISSION` (T-final: repeated submission).

@@ -16,7 +16,9 @@ from nodes.models import EnrollmentToken, Node
 ALL = {"admin", "operator", "viewer"}
 ADMIN = {"admin"}
 
-# (method, path template, roles allowed)   {node} and {token} are filled in per test
+OPERATORS = {"admin", "operator"}
+
+# (method, path template, roles allowed)   {node}, {token}, {task} and {user} are filled in per test
 ENDPOINTS = [
     ("get", "/api/v1/nodes/", ALL),
     ("get", "/api/v1/nodes/{node}/", ALL),
@@ -28,18 +30,30 @@ ENDPOINTS = [
     ("post", "/api/v1/enrollment-tokens/{token}/cancel/", ADMIN),
     ("get", "/api/v1/users/", ADMIN),
     ("post", "/api/v1/users/", ADMIN),
-    ("patch", "/api/v1/users/1/", ADMIN),
+    ("patch", "/api/v1/users/{user}/", ADMIN),
     ("get", "/api/v1/audit/", ADMIN),
     ("post", "/api/v1/audit/verify/", ADMIN),
+    # Member 3's endpoints
+    ("get", "/api/v1/nodes/{node}/trust/", ALL),
+    ("get", "/api/v1/policy/", ALL),
+    ("post", "/api/v1/policy/", ADMIN),
+    ("post", "/api/v1/tasks/", OPERATORS),
+    ("get", "/api/v1/tasks/list/", ALL),
+    ("get", "/api/v1/tasks/{task}/", ALL),
+    ("post", "/api/v1/tasks/{task}/cancel/", OPERATORS),
 ]
 IDS = [f"{method.upper()} {path}" for method, path, _ in ENDPOINTS]
 
 
 @pytest.fixture
-def world(node_factory, token_factory):
+def world(node_factory, token_factory, django_user_model):
+    from tasks.models import Task
+
     node, _ = node_factory(name="gateway-03")
     token, _ = token_factory()
-    return {"node": str(node.id), "token": str(token.id)}
+    owner = django_user_model.objects.create_user("task-owner", password="Str0ng-Passw0rd!", role="operator")
+    task = Task.objects.create(task_type="checksum", payload={"file": "a.bin"}, priority=1, idempotency_key="matrix-1", created_by=owner)
+    return {"node": str(node.id), "token": str(token.id), "task": str(task.id), "user": str(owner.pk)}
 
 
 def call(client, method, path, world):
@@ -72,14 +86,15 @@ class TestAccessMatrix:
 
 
 @pytest.mark.django_db
-def test_every_route_in_the_api_is_covered_by_this_matrix(world):
-    """Fails when someone adds an endpoint without adding it to the matrix above."""
+def test_every_route_in_the_api_is_covered_by_this_matrix():
+    """Fails when someone adds an endpoint without adding it to the matrix above (exact route templates)."""
     from django.urls import get_resolver
 
-    covered = {path.split("{")[0] for _, path, _ in ENDPOINTS}
+    listed = {path for _, path, _ in ENDPOINTS}
     public = {"/api/v1/health/", "/api/v1/auth/csrf/", "/api/v1/auth/login/", "/api/v1/nodes/enroll/"}
     signed_node_routes = {"/api/v1/node-api/heartbeat/"}  # no session: authenticated by signature, tested in heartbeats/tests
     auth_routes = {"/api/v1/auth/logout/", "/api/v1/auth/me/"}  # tested in accounts/tests
+    node_routes = {"/api/v1/node-api/tasks/next/"}  # signed requests: test_node_authentication.py
 
     def walk(patterns, prefix=""):
         for pattern in patterns:

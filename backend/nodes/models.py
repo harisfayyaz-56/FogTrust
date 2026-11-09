@@ -87,7 +87,11 @@ class Node(models.Model):
     last_seen_at = models.DateTimeField(null=True, blank=True)  # Member 2 (accepted heartbeat)
     last_counter = models.BigIntegerField(default=0)  # Member 2 (replay defence)
     enrolled_at = models.DateTimeField(default=timezone.now)
-    enrolled_via = models.ForeignKey(EnrollmentToken, on_delete=models.PROTECT, related_name="enrolled_nodes")
+    # Always set by the enrollment service. Nullable so tests and seed scripts (Member 3's
+    # fixtures) can create a node without going through enrollment.
+    enrolled_via = models.ForeignKey(
+        EnrollmentToken, null=True, blank=True, on_delete=models.PROTECT, related_name="enrolled_nodes"
+    )
     revoked_at = models.DateTimeField(null=True, blank=True)
     # Null together with revoke_source="automatic": the trust engine revoked it, not a person.
     revoked_by = models.ForeignKey(
@@ -123,3 +127,22 @@ class Node(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.status})"
+
+
+class NodeNonce(models.Model):
+    """
+    One row per signed request a node has made inside the replay window (docs/node-signing-spec.md).
+
+    The UNIQUE (node, nonce) constraint is what makes replay detection atomic: of two copies of
+    the same request, the database lets exactly one insert succeed. Rows are only needed until
+    `expires_at` (request timestamp + window); after that the freshness check refuses the request
+    on its own, so old rows are purged (see replay_store.DatabaseReplayStore.purge).
+    """
+
+    node = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="+")
+    nonce = models.CharField(max_length=32)
+    expires_at = models.BigIntegerField(db_index=True)  # Unix seconds
+
+    class Meta:
+        db_table = "nodes_node_nonce"
+        constraints = [models.UniqueConstraint(fields=["node", "nonce"], name="node_nonce_unique")]

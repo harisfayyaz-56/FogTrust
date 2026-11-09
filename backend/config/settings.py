@@ -195,6 +195,10 @@ REST_FRAMEWORK = {
         "login_username": os.environ.get("LOGIN_USERNAME_RATE_LIMIT", "20/hour"),
         "enroll": os.environ.get("ENROLL_RATE_LIMIT", "10/min"),
         "heartbeat": "120/min",
+        # Signed node requests: per node, once authenticated
+        "node_request": os.environ.get("NODE_REQUEST_RATE_LIMIT", "120/min"),
+        # Failed node authentication: per client IP. Bounds the audit rows an anonymous flood can create.
+        "node_auth_failed": os.environ.get("NODE_AUTH_FAILED_RATE_LIMIT", "30/min"),
     },
     # Throttles identify a client by REMOTE_ADDR only. With DRF's default (None) the
     # client-supplied X-Forwarded-For header is trusted, so one attacker could rotate it
@@ -216,12 +220,14 @@ CACHES = {
 # ---------------------------------------------------------------------------
 # Nodes and enrollment (Member 1)
 # ---------------------------------------------------------------------------
-# Trust score a newly enrolled node starts with. Member 3's policy engine owns the
-# score afterwards; this is only the starting value.
-INITIAL_TRUST_SCORE = min(100, max(0, env_int("INITIAL_TRUST_SCORE", 100)))
+# Fallback starting trust score. A newly enrolled node normally starts at the POLICY's
+# `initial_score` (trust.PolicyConfig, editable by an administrator); this value is only
+# used if the policy has no such key.
+INITIAL_TRUST_SCORE = min(100, max(0, env_int("INITIAL_TRUST_SCORE", 80)))
 ENROLLMENT_TOKEN_DEFAULT_MINUTES = 15
 ENROLLMENT_TOKEN_MAX_MINUTES = 24 * 60
 ENROLL_MAX_BODY_BYTES = 4096  # enrollment is public, so it gets a much smaller cap than 256 KB
+NODE_REQUEST_MAX_BODY_BYTES = 64 * 1024  # signed requests from nodes (Week 4)
 
 # Long-term X25519 key for result encryption (FR-5). A file readable only by its owner,
 # created with `python manage.py generate_server_key`. Its PUBLIC half is returned to
