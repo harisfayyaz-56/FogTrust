@@ -73,6 +73,6 @@ python -m pytest
 |---|---|---|
 | 1 | Requirements, data model, API contract, threat model, skeleton | Done |
 | 2 | Authentication, audit log, one end-to-end slice | Done |
-| 3 | Security engine, dashboard, features | In progress: identity, enrollment, revocation, users and evidence view done; replay defence and encrypted results done; heartbeat/task endpoints, trust engine and dashboard pending |
+| 3 | Security engine, dashboard, features | In progress: identity, enrollment, revocation, users, evidence view, replay defence, encrypted results, trust engine, task queue and signed node authentication done; heartbeat endpoint, result endpoint and dashboard pending |
 | 4 | Integration, adversarial tests, measurement, hardening | Planned |
 | 5 | Fixes, evaluation, documentation, demo | Planned |

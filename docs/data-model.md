@@ -111,7 +111,7 @@ Raw token format: 32 random bytes from `secrets.token_urlsafe(32)` (about 43 cha
 | last_seen_at | datetime | nullable | M2 (accepted heartbeat) |
 | last_counter | bigint | default 0 | M2 (replay defence) |
 | enrolled_at | datetime | | M1 |
-| enrolled_via | FK EnrollmentToken | | M1 |
+| enrolled_via | FK EnrollmentToken, nullable | always set by the enrollment service; nullable only so fixtures can create nodes directly | M1 |
 | revoked_at | datetime | nullable | M1 |
 | revoked_by | FK User | nullable (null = automatic revocation) | M1 |
 | revoke_reason | varchar(500) | required when revoked | M1 |
@@ -122,6 +122,18 @@ Rules:
   and gets a new ID. This keeps the history of the old identity intact.
 - Every node-authenticated endpoint checks `status == active` **before** any other processing.
 - A revoked node is never eligible for task assignment (Member 3 enforces in the scheduler).
+
+### 3.3a NodeNonce — `nodes.NodeNonce` (Member 1) **Built (Week 4)**
+
+The database half of replay defence (node-signing-spec.md). One row per signed request an authenticated node made inside the window.
+
+| Field | Type | Notes |
+|---|---|---|
+| node | FK Node | cascade delete |
+| nonce | char(32) | 16 random bytes as lowercase hex |
+| expires_at | bigint, indexed | Unix seconds: request timestamp + window. Rows older than this are purged (about 1 in 100 inserts) |
+
+UNIQUE (node, nonce) makes "first use wins" atomic: of two copies of one request the database lets exactly one insert succeed. Because it is in the database, a restart does not reopen the window. `fogtrust_crypto.replay.ReplayStore` is implemented by `nodes.replay_store.DatabaseReplayStore` (also holds `advance_counter` for heartbeats, using `Node.last_counter`).
 
 ### 3.4 Heartbeat — `heartbeats.Heartbeat` (Member 2, *Proposed*)
 
@@ -323,6 +335,7 @@ edits would need the latest hash stored somewhere else (see the limitations stat
 | `node.enroll` | M1 | success, failure |
 | `node.revoke` | M1 | success, failure, denied |
 | `node.request_rejected` | M2 | failure |
+| `node.auth` | M1 | failure only (a signed node request refused: missing headers, unknown or revoked node, bad signature, stale, replayed). Actor is `anonymous` because the node id is only a claim until the signature verifies. Past 30 failures a minute from one client, one summary `request.rate_limited` event a minute replaces the per-request rows |
 | `heartbeat.rejected` | M2 | failure (accepted heartbeats are not audited, to keep the log readable; they are in the Heartbeat table) |
 | `result.integrity_failed` | M2 | failure |
 | `task.submit`, `task.assign`, `task.reassign`, `task.fail` | M3 | success, failure |

@@ -15,9 +15,10 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from audit.services import log_event
-from core.errors import ErrorCode
+from core.errors import APIError, ErrorCode
 from core.models import Decision
 from nodes.models import Node
+from nodes.services import revoke_node
 from trust.engine import NodeMetrics, compute_trust_score
 from trust.models import PolicyConfig, TrustScoreRecord
 
@@ -59,6 +60,7 @@ def recompute_node_score(
     with transaction.atomic():
         old_score = node.trust_score
         node.trust_score = decision.new_score
+        node.save(update_fields=["trust_score"])
         record = TrustScoreRecord.objects.create(
             node=node,
             score=decision.new_score,
@@ -67,31 +69,23 @@ def recompute_node_score(
             policy_version=policy.version,
         )
 
-        # Check for auto-revocation
+        # Automatic revocation goes through the same service as a manual one (nodes.services),
+        # so it is audited, explained in the evidence view, and announces `node_revoked` so the
+        # scheduler can requeue the node's tasks.
         if decision.should_auto_revoke and node.status == Node.Status.ACTIVE:
-            node.status = Node.Status.REVOKED
-            node.revoked_at = timezone.now()
-            node.revoke_source = Node.RevokeSource.AUTOMATIC
-            node.revoke_reason = f"Trust score ({decision.new_score}) breached auto-revoke threshold ({policy.values.get('auto_revoke_below', 10)})"
-
-            log_event(
-                action="node.revoke",
-                outcome="success",
-                request=request,
-                actor_type="system",
-                actor_id="trust_engine",
-                actor_role="system",
-                target_type="node",
-                target_id=str(node.id),
-                details={
-                    "node_name": node.name,
-                    "reason": node.revoke_reason,
-                    "source": "automatic",
-                    "final_trust_score": decision.new_score,
-                },
-            )
-
-        node.save(update_fields=["trust_score", "status", "revoked_at", "revoke_source", "revoke_reason"])
+            try:
+                revoke_node(
+                    node,
+                    reason=(
+                        f"Trust score ({decision.new_score}) breached auto-revoke threshold "
+                        f"({policy.values.get('auto_revoke_below', 10)})"
+                    ),
+                    by=None,
+                    source=Node.RevokeSource.AUTOMATIC,
+                    request=request,
+                )
+            except APIError:
+                pass  # someone revoked it first; the node is revoked either way
 
     # Decision audit record
     Decision.objects.create(
