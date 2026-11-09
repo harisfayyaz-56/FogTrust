@@ -317,6 +317,12 @@ on that node are returned to the queue (Member 3).
 {"accepted": true, "server_time": "2026-11-19T10:20:31.402Z", "next_heartbeat_in": 10}
 ```
 
+- Refusals use the standard error format with the code from section 2.2 (all `401` except `NODE_REVOKED` `403`, `PAYLOAD_TOO_LARGE` `413`, `VALIDATION_ERROR` and `MALFORMED_REQUEST` `400`, `RATE_LIMITED` `429`).
+- Rate limits: 120 per minute per (node id, client address), and 1200 per minute per client address, so spraying random node ids cannot escape the limit and a stranger cannot use up a victim's quota.
+- `timestamp_window_s` and `heartbeat_interval_s` come from the current policy; without the trust app the defaults are 30 and 10. `next_heartbeat_in` is the policy's `heartbeat_interval_s`.
+- `GET /nodes/{id}/heartbeats/` (any signed-in role, paginated, newest first) returns `{id, node, counter, nonce_prefix, sent_at, received_at, reported_load, accepted, reason_code}`. Filters: `?accepted=true|false`, `?reason_code=HEARTBEAT_REPLAYED`. The full nonce is never shown. Unknown node: `404`.
+- What is stored is described in `data-model.md` section 3.4.
+
 ### 5.6 Tasks — Member 3 (*Proposed*)
 
 | Method | Path | Auth | Wk | Purpose |
@@ -453,3 +459,4 @@ mention it in the PR description.
 | 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers return `NODE_SIGNATURE_INVALID` (see node-signing-spec.md) | Member 2 |
 | 2026-11-06 | 0.3 | Auth endpoints built: logout returns 204, `/me` adds `session_idle_timeout`, 8-hour absolute session limit, per-username login limit; audit verify adds `problem` | Member 1 |
 | 2026-11-07 | 0.4 | Week 3 built (Member 1): enrollment tokens, `POST /nodes/enroll/`, node list and detail, revocation, `/users/`, `/decisions/`. Enrollment response adds `capacity` and `server_public_key`; node responses add `revoke_source`; audit action `user.enable`; settings `NUM_PROXIES=0` so throttles cannot be bypassed with a forged `X-Forwarded-For` | Member 1 |
+| 2026-11-08 | 0.5 | Section 5.5: heartbeat endpoint built (response codes, rate limits, history endpoint fields and filters); `data-model.md` 3.4 now has two tables (`Heartbeat`, `UsedNonce`). Re-recorded from Week 4 (Member 2): section 2.2 canonical header spellings, the specific `code` is visible to the client (accepted risk), `Content-Length` pre-check | Member 2 |

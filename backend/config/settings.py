@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "accounts",
     "audit",
     "nodes",
+    "heartbeats",
 ]
 
 MIDDLEWARE = [

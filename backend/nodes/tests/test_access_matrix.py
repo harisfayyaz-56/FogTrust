@@ -21,6 +21,7 @@ ENDPOINTS = [
     ("get", "/api/v1/nodes/", ALL),
     ("get", "/api/v1/nodes/{node}/", ALL),
     ("post", "/api/v1/nodes/{node}/revoke/", ADMIN),
+    ("get", "/api/v1/nodes/{node}/heartbeats/", ALL),
     ("get", "/api/v1/decisions/", ALL),
     ("get", "/api/v1/enrollment-tokens/", ADMIN),
     ("post", "/api/v1/enrollment-tokens/", ADMIN),
@@ -77,6 +78,7 @@ def test_every_route_in_the_api_is_covered_by_this_matrix(world):
 
     covered = {path.split("{")[0] for _, path, _ in ENDPOINTS}
     public = {"/api/v1/health/", "/api/v1/auth/csrf/", "/api/v1/auth/login/", "/api/v1/nodes/enroll/"}
+    signed_node_routes = {"/api/v1/node-api/heartbeat/"}  # no session: authenticated by signature, tested in heartbeats/tests
     auth_routes = {"/api/v1/auth/logout/", "/api/v1/auth/me/"}  # tested in accounts/tests
 
     def walk(patterns, prefix=""):
@@ -90,5 +92,5 @@ def test_every_route_in_the_api_is_covered_by_this_matrix(world):
     routes = {"/" + r.replace("<str:node_id>", "{node}").replace("<str:token_id>", "{token}").replace("<str:user_id>", "1")
               for r in walk(get_resolver().url_patterns)
               if r.startswith("api/v1/")}
-    unlisted = {r for r in routes if r.split("{")[0] not in covered and r not in public | auth_routes}
+    unlisted = {r for r in routes if r.split("{")[0] not in covered and r not in public | auth_routes | signed_node_routes}
     assert not unlisted, f"endpoints missing from the access matrix: {sorted(unlisted)}"
