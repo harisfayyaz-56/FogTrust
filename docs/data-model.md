@@ -123,35 +123,37 @@ Rules:
 - Every node-authenticated endpoint checks `status == active` **before** any other processing.
 - A revoked node is never eligible for task assignment (Member 3 enforces in the scheduler).
 
-### 3.3a NodeNonce — `nodes.NodeNonce` (Member 1) **Built (Week 4)**
+### 3.4 Heartbeat and UsedNonce — `heartbeats.Heartbeat`, `heartbeats.UsedNonce` (Member 2)
 
-The database half of replay defence (node-signing-spec.md). One row per signed request an authenticated node made inside the window.
+Two tables with two jobs. **UsedNonce** is the replay defence and is purged; **Heartbeat** is the history people read and is not.
 
-| Field | Type | Notes |
-|---|---|---|
-| node | FK Node | cascade delete |
-| nonce | char(32) | 16 random bytes as lowercase hex |
-| expires_at | bigint, indexed | Unix seconds: request timestamp + window. Rows older than this are purged (about 1 in 100 inserts) |
-
-UNIQUE (node, nonce) makes "first use wins" atomic: of two copies of one request the database lets exactly one insert succeed. Because it is in the database, a restart does not reopen the window. `fogtrust_crypto.replay.ReplayStore` is implemented by `nodes.replay_store.DatabaseReplayStore` (also holds `advance_counter` for heartbeats, using `Node.last_counter`).
-
-### 3.4 Heartbeat — `heartbeats.Heartbeat` (Member 2, *Proposed*)
+`Heartbeat`:
 
 | Field | Type | Notes |
 |---|---|---|
 | id | bigint | PK |
 | node | FK Node | |
-| counter | bigint | Must be greater than `node.last_counter` |
-| nonce | char(32) | 16 random bytes, hex |
-| sent_at | datetime | Node's claimed timestamp |
+| counter | bigint, null | From the body; null when the body could not be read |
+| nonce | char(32), blank | 16 random bytes, hex; blank when the header was missing or malformed |
+| sent_at | datetime, null | Node's claimed timestamp; null when the body could not be read |
 | received_at | datetime | Server time |
-| reported_load | smallint | |
+| reported_load | smallint, null | |
 | accepted | bool | |
-| reason_code | varchar(48) | e.g. `HEARTBEAT_REPLAYED`; empty when accepted |
+| reason_code | varchar(48) | e.g. `HEARTBEAT_REPLAYED`; empty exactly when accepted (database check) |
 
-Unique constraint on `(node, nonce)` so the database itself rejects a reused nonce.
-Rejected heartbeats from **unknown** node IDs are not stored here (no FK target); they go to
-the audit log only.
+- Unique `(node, nonce)` **only where `accepted` is true**: a nonce is accepted once, but a rejected replay legitimately repeats it.
+- A row is written for every heartbeat from an **enrolled** node, accepted or rejected. Rejections from unknown node ids are not stored (no node to attach them to); they go to the audit log and the Decision.
+- Accepted heartbeats write no Decision and no audit event (one per node every few seconds would drown the evidence view). Rejections write both.
+
+`UsedNonce`:
+
+| Field | Type | Notes |
+|---|---|---|
+| node | FK Node | |
+| nonce | char(32) | |
+| expires_at | bigint | Unix seconds: the request's timestamp + `timestamp_window_s` |
+
+Unique `(node, nonce)`: the database itself makes "claim this nonce" atomic. `python manage.py purge_nonces` deletes rows past `expires_at` (safe: the timestamp check refuses those requests first). The counter check is one conditional `UPDATE node SET last_counter = n WHERE id = ? AND last_counter < n`.
 
 ### 3.5 Task — `tasks.Task` (Member 3, *Proposed*)
 
