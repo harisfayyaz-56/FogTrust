@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/v1/node-api/tasks/", include("tasks.node_urls")),
     path("api/v1/", include("trust.urls")),
     path("api/v1/", include("heartbeats.urls")),
+    path("api/v1/", include("results.urls")),
 ]
 
 # The Django admin has its own login page without our rate limits or audit events,

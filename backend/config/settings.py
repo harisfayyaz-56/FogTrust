@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "trust",
     "tasks",
     "heartbeats",
+    "results",
 ]
 
 MIDDLEWARE = [

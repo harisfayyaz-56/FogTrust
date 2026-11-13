@@ -123,11 +123,21 @@ Rules:
 - Every node-authenticated endpoint checks `status == active` **before** any other processing.
 - A revoked node is never eligible for task assignment (Member 3 enforces in the scheduler).
 
-### 3.4 Heartbeat and UsedNonce — `heartbeats.Heartbeat`, `heartbeats.UsedNonce` (Member 2)
+### 3.3a NodeNonce — `nodes.NodeNonce` (Member 1) **Built (Week 4)**
 
-Two tables with two jobs. **UsedNonce** is the replay defence and is purged; **Heartbeat** is the history people read and is not.
+The database half of replay defence (node-signing-spec.md). One row per signed request an authenticated node made inside the window.
 
-`Heartbeat`:
+| Field | Type | Notes |
+|---|---|---|
+| node | FK Node | cascade delete |
+| nonce | char(32) | 16 random bytes as lowercase hex |
+| expires_at | bigint, indexed | Unix seconds: request timestamp + window. Rows older than this are purged (about 1 in 100 inserts) |
+
+UNIQUE (node, nonce) makes "first use wins" atomic: of two copies of one request the database lets exactly one insert succeed. Because it is in the database, a restart does not reopen the window. `fogtrust_crypto.replay.ReplayStore` is implemented by `nodes.replay_store.DatabaseReplayStore` (also holds `advance_counter` for heartbeats, using `Node.last_counter`).
+
+### 3.4 Heartbeat — `heartbeats.Heartbeat` (Member 2)
+
+The history people read. The replay defence is **not** in this table: it is `nodes.NodeNonce` (3.3a), shared by every signed node endpoint, and it is purged; history must outlive the purge.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -144,16 +154,7 @@ Two tables with two jobs. **UsedNonce** is the replay defence and is purged; **H
 - Unique `(node, nonce)` **only where `accepted` is true**: a nonce is accepted once, but a rejected replay legitimately repeats it.
 - A row is written for every heartbeat from an **enrolled** node, accepted or rejected. Rejections from unknown node ids are not stored (no node to attach them to); they go to the audit log and the Decision.
 - Accepted heartbeats write no Decision and no audit event (one per node every few seconds would drown the evidence view). Rejections write both.
-
-`UsedNonce`:
-
-| Field | Type | Notes |
-|---|---|---|
-| node | FK Node | |
-| nonce | char(32) | |
-| expires_at | bigint | Unix seconds: the request's timestamp + `timestamp_window_s` |
-
-Unique `(node, nonce)`: the database itself makes "claim this nonce" atomic. `python manage.py purge_nonces` deletes rows past `expires_at` (safe: the timestamp check refuses those requests first). The counter check is one conditional `UPDATE node SET last_counter = n WHERE id = ? AND last_counter < n`.
+- The counter check is one conditional `UPDATE node SET last_counter = n WHERE id = ? AND last_counter < n` (`nodes.replay_store`).
 
 ### 3.5 Task — `tasks.Task` (Member 3, *Proposed*)
 
@@ -171,20 +172,25 @@ Unique `(node, nonce)`: the database itself makes "claim this nonce" atomic. `py
 | created_by | FK User | |
 | created_at, assigned_at, deadline_at, completed_at | datetime | |
 
-### 3.6 TaskResult — `results.TaskResult` (Member 2, *Proposed*)
+### 3.6 TaskResult — `results.TaskResult` (Member 2)
+
+Only ciphertext is stored; the plaintext exists in memory while it is checked or shown.
 
 | Field | Type | Notes |
 |---|---|---|
-| id | UUID | PK |
+| id | uuid | PK |
 | task | FK Task | |
-| node | FK Node | Must equal `task.assigned_node` |
-| ephemeral_public_key | char(44) | Node's X25519 key for this result |
-| nonce | char(16) | 12-byte AES-GCM nonce, base64 |
-| ciphertext | text | base64, max 64 KB |
-| integrity_valid | bool | AES-GCM tag verified |
-| plaintext_sha256 | char(64) | nullable; stored instead of the plaintext where possible |
+| node | FK Node | The node that submitted it |
+| ephemeral_public_key | char(44) | base64 of the node's one-time X25519 key |
+| nonce | char(16) | base64 of the 12-byte AES-GCM nonce |
+| ciphertext | text | base64, at most 65,536 characters (data plus 16-byte tag) |
+| integrity_valid | bool | |
+| plaintext_sha256 | char(64), null | Null for a failed attempt |
 | received_at | datetime | |
-| reason_code | varchar(48) | e.g. `RESULT_INTEGRITY_FAILED` |
+| reason_code | varchar(48) | Empty exactly when valid (database check), else `RESULT_INTEGRITY_FAILED` |
+
+- A task has at most **one valid** result (unique `task` where `integrity_valid`). Failed attempts are separate rows, so the evidence view can show a tampered submission (T4).
+- Encryption format and checks: `node-signing-spec.md` section 6 and `api-contract.md` section 5.7.
 
 ### 3.7 TrustScoreRecord — `trust.TrustScoreRecord` (Member 3, *Proposed*)
 

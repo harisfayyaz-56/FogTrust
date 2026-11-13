@@ -41,6 +41,7 @@ ENDPOINTS = [
     ("get", "/api/v1/tasks/list/", ALL),
     ("get", "/api/v1/tasks/{task}/", ALL),
     ("post", "/api/v1/tasks/{task}/cancel/", OPERATORS),
+    ("get", "/api/v1/tasks/{task}/result/", OPERATORS),
 ]
 IDS = [f"{method.upper()} {path}" for method, path, _ in ENDPOINTS]
 
@@ -93,7 +94,7 @@ def test_every_route_in_the_api_is_covered_by_this_matrix():
     listed = {path for _, path, _ in ENDPOINTS}
     public = {"/api/v1/health/", "/api/v1/auth/csrf/", "/api/v1/auth/login/", "/api/v1/nodes/enroll/"}
     auth_routes = {"/api/v1/auth/logout/", "/api/v1/auth/me/"}  # tested in accounts/tests
-    node_routes = {"/api/v1/node-api/tasks/next/", "/api/v1/node-api/heartbeat/"}  # signed requests: test_node_authentication.py, heartbeats/tests
+    node_routes = {"/api/v1/node-api/tasks/next/", "/api/v1/node-api/heartbeat/", "/api/v1/node-api/tasks/{task}/result/"}  # signed requests: test_node_authentication.py, heartbeats/tests, results/tests
 
     def walk(patterns, prefix=""):
         for pattern in patterns:
@@ -104,7 +105,7 @@ def test_every_route_in_the_api_is_covered_by_this_matrix():
                 yield route
 
     placeholders = {"<str:node_id>": "{node}", "<uuid:node_id>": "{node}", "<str:token_id>": "{token}",
-                    "<uuid:id>": "{task}", "<str:user_id>": "{user}"}
+                    "<uuid:id>": "{task}", "<str:task_id>": "{task}", "<str:user_id>": "{user}"}
     routes = set()
     for route in walk(get_resolver().url_patterns):
         if route.startswith("api/v1/"):

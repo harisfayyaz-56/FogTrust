@@ -131,6 +131,7 @@ BEHAVIOURS = {
     "drifting": drifting_behaviour,
     "regressor": regressor_behaviour,
     "replayer": replayer_behaviour,
+    "crasher": honest_behaviour,  # honest until it "crashes": see --crash-after in cmd_heartbeat
 }
 
 
@@ -252,6 +253,9 @@ def cmd_enroll(args) -> int:
 
 def cmd_heartbeat(args) -> int:
     for i in range(args.count):
+        if args.behaviour == "crasher" and i >= args.crash_after:
+            print(f"[{i + 1}/{args.count}] node crashed: no more heartbeats (the broker should notice the silence)")
+            break
         try:
             status, payload = send_heartbeat(
                 args.server, args.key_file, args.state_file, args.behaviour, args.load, args.dry_run
@@ -323,6 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     heartbeat.add_argument("--count", type=int, default=1)
     heartbeat.add_argument("--interval", type=float, default=10.0)
     heartbeat.add_argument("--server", default=DEFAULT_SERVER)
+    heartbeat.add_argument("--crash-after", type=int, default=3, help="with --behaviour crasher: heartbeats before going silent")
     heartbeat.add_argument("--dry-run", action="store_true", help="print the signed request, send nothing")
     heartbeat.set_defaults(func=cmd_heartbeat)
 
@@ -350,7 +355,6 @@ def main(argv=None) -> int:
     except CryptoKeyError as error:
         print(f"Key error: {error}")
         return 2
-
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -14,10 +14,10 @@ from audit.models import AuditEvent
 from core.models import Decision
 from fogtrust_crypto.keys import generate_private_key
 from fogtrust_crypto.node_auth import sign_request
-from heartbeats.models import Heartbeat, UsedNonce
-from heartbeats.replay_store import DatabaseReplayStore
+from heartbeats.models import Heartbeat
 from heartbeats.throttles import IPHeartbeatThrottle, NodeHeartbeatThrottle
-from nodes.models import Node
+from nodes.models import Node, NodeNonce
+from nodes.replay_store import DatabaseReplayStore
 
 URL = "/api/v1/node-api/heartbeat/"
 
@@ -98,7 +98,7 @@ class TestT1SpoofedNode:
         send(api_client, generate_private_key(), node.id, counter=99)
         node.refresh_from_db()
         assert node.last_counter == 0 and node.last_seen_at is None
-        assert UsedNonce.objects.count() == 0  # an unauthenticated caller cannot fill the nonce table
+        assert NodeNonce.objects.count() == 0  # an unauthenticated caller cannot fill the nonce table
 
     def test_rejection_is_in_the_node_history(self, api_client, enrolled):
         node, _ = enrolled
@@ -141,7 +141,7 @@ class TestT2ReplayedHeartbeat:
         for _ in range(3):
             resend(api_client, headers, body)
         node.refresh_from_db()
-        assert node.last_counter == 1 and UsedNonce.objects.count() == 1
+        assert node.last_counter == 1 and NodeNonce.objects.count() == 1
         assert Heartbeat.objects.filter(accepted=True).count() == 1
         assert Heartbeat.objects.filter(accepted=False, reason_code="HEARTBEAT_REPLAYED").count() == 3
 
@@ -257,12 +257,13 @@ class TestRestartAndPurge:
         assert error_code(replay) == "HEARTBEAT_REPLAYED"
         assert DatabaseReplayStore().last_counter(str(node.id)) == 1
 
-    def test_purge_removes_only_expired_nonces(self, enrolled):
+    def test_purge_removes_only_expired_nonces(self, enrolled, monkeypatch):
+        monkeypatch.setattr(DatabaseReplayStore, "PURGE_ONE_IN", 10**9)  # no random purge while the test counts rows
         node, _ = enrolled
         store = DatabaseReplayStore()
         assert store.add_nonce(str(node.id), "a" * 32, 1000) and store.add_nonce(str(node.id), "b" * 32, 2000)
         assert store.purge(1500) == 1
-        assert list(UsedNonce.objects.values_list("nonce", flat=True)) == ["b" * 32]
+        assert list(NodeNonce.objects.values_list("nonce", flat=True)) == ["b" * 32]
 
     def test_purge_command(self, enrolled, capsys):
         from django.core.management import call_command
@@ -270,7 +271,7 @@ class TestRestartAndPurge:
         node, _ = enrolled
         DatabaseReplayStore().add_nonce(str(node.id), "c" * 32, 1)  # long expired
         call_command("purge_nonces")
-        assert "Purged 1 expired nonce" in capsys.readouterr().out and UsedNonce.objects.count() == 0
+        assert "Purged 1 expired nonce" in capsys.readouterr().out and NodeNonce.objects.count() == 0
 
 
 @pytest.mark.django_db
@@ -287,15 +288,15 @@ class TestAtomicity:
         from django.db import IntegrityError, transaction
 
         node, _ = enrolled
-        UsedNonce.objects.create(node=node, nonce="d" * 32, expires_at=9999999999)
+        NodeNonce.objects.create(node=node, nonce="d" * 32, expires_at=9999999999)
         with pytest.raises(IntegrityError), transaction.atomic():
-            UsedNonce.objects.bulk_create([UsedNonce(node=node, nonce="d" * 32, expires_at=1)])
+            NodeNonce.objects.bulk_create([NodeNonce(node=node, nonce="d" * 32, expires_at=1)])
 
     def test_add_nonce_reports_the_loser(self, enrolled):
         node, _ = enrolled
         store = DatabaseReplayStore()
         assert [store.add_nonce(str(node.id), "e" * 32, 9999999999) for _ in range(5)] == [True, False, False, False, False]
-        assert UsedNonce.objects.count() == 1
+        assert NodeNonce.objects.count() == 1
 
     def test_advance_counter_is_one_conditional_statement(self, enrolled, django_assert_num_queries):
         node, _ = enrolled

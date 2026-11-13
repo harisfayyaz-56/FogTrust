@@ -1,17 +1,13 @@
 """
 Heartbeat history and the replay-defence nonce table (docs/data-model.md section 3.4, Member 2).
 
-Two tables, two jobs:
+Heartbeat is the history people read (dashboard, evidence): one row per heartbeat from an ENROLLED
+node, accepted or rejected, with the reason. Rejections from unknown node ids are not stored (no node
+to attach them to); they live in the audit log and the Decision only.
 
-  UsedNonce  The replay defence. One row per nonce a node has used, kept until the nonce's window
-             closes, then purged. The unique (node, nonce) constraint is what makes the check atomic:
-             two copies of one request cannot both insert it, so only one is accepted.
-
-  Heartbeat  The history people read (dashboard, evidence). One row per heartbeat from an ENROLLED
-             node, accepted or rejected, with the reason. Rejections from unknown node ids are not
-             stored (no node to attach them to); they live in the audit log and the Decision only.
-             It is kept apart from UsedNonce because history must outlive the purge, and a rejected
-             replay legitimately repeats an earlier nonce.
+The replay defence is NOT here. It is nodes.NodeNonce with nodes.replay_store.DatabaseReplayStore
+(Member 1), shared by every signed node endpoint. History is kept apart from it because history must
+outlive the purge, and a rejected replay legitimately repeats an earlier nonce.
 """
 
 from django.db import models
@@ -44,12 +40,3 @@ class Heartbeat(models.Model):
 
     def __str__(self) -> str:
         return f"{self.node_id} {'ok' if self.accepted else self.reason_code}"
-
-
-class UsedNonce(models.Model):
-    node = models.ForeignKey("nodes.Node", on_delete=models.CASCADE, related_name="used_nonces")
-    nonce = models.CharField(max_length=32)
-    expires_at = models.BigIntegerField(db_index=True)  # Unix seconds: timestamp + window
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["node", "nonce"], name="usednonce_node_nonce_unique")]

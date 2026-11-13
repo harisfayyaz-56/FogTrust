@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.4 (Week 4) |
+| Version | 0.5 (Week 4) |
 | Author | Member 2 |
 | Implements | [api-contract.md](api-contract.md) sections 2.2, 5.5 and 5.7 (contract version 0.2), and the enrollment proof in 5.4 |
 | Code | `backend/fogtrust_crypto/` (`keys.py`, `node_auth.py`, `replay.py`, `heartbeat.py`, `results.py`, `result.py`, `node_sim.py`) |
@@ -79,11 +79,11 @@ result = verify_heartbeat(request.headers, request.method, request.get_full_path
 ```
 
 - `lookup_node` (Member 1, `nodes/node_auth.py`) builds the `NodeInfo` from the `Node` row.
-- `DatabaseReplayStore` (`heartbeats/replay_store.py`): the nonce is claimed by inserting into `UsedNonce` (unique `(node, nonce)`), the counter by one conditional `UPDATE`. State lives in the database, so it survives a restart. `purge_nonces` removes expired nonces.
+- `nodes.replay_store.DatabaseReplayStore` (Member 1, shared by every signed node endpoint): the nonce is claimed by inserting into `NodeNonce` (unique `(node, nonce)`), the counter by one conditional `UPDATE`. State lives in the database, so it survives a restart. Expired nonces are cleared on about 1 in 100 inserts, and `purge_nonces` does it on demand. (Member 2 first wrote a second copy of this store in the heartbeats app; it was removed so that there is one nonce table.)
 - Rejections are stored with `record_decision_dict(result.to_decision("heartbeat"))` and `log_event("heartbeat.rejected", ...)`; the Decision carries the rules fired, the window in `thresholds` and the policy version.
 - Throttles (`heartbeats/throttles.py`): 120/min per (node id, client address) and 1200/min per client address.
 
-For results, `verify_result_request(headers, method, path, body, lookup, store, server_private_key, task_id, task.assigned_node_id, window_s=...)` returns a `DecryptionOutcome` (`.accepted`, `.result`, `.plaintext`, `.plaintext_sha256`). It waits for the `tasks` app to be registered on `main`. Store the hash; the plaintext field is hidden from `repr` so it cannot be logged by accident.
+Results are in `backend/results/` (`NodeResultView`, `ResultDetailView`). The view calls `verify_result_request(..., task_id, task.assigned_node_id, window_s=...)`, which returns a `DecryptionOutcome` (`.accepted`, `.result`, `.plaintext`, `.plaintext_sha256`), then makes the one decision only the database can: a conditional `UPDATE` completes the task if it is still `assigned`, so a task is completed once. Only the ciphertext and the SHA-256 are stored. The plaintext field is hidden from `repr` so it cannot be logged by accident, and `GET /tasks/{id}/result/` decrypts at read time, so a ciphertext edited in the database is caught when someone opens it.
 
 For enrollment, `verify_enrollment_proof(public_key, token, name, proof)` is already called by `nodes/services.py`.
 
@@ -132,6 +132,7 @@ Attacker behaviours (use only on your own local broker):
 | `replayer` | T2: first call is captured, later calls resend it | first accepted, then `HEARTBEAT_REPLAYED` |
 | `drifting` | Clock an hour slow | `HEARTBEAT_STALE` |
 | `regressor` | Always counter 1 | first accepted, then `HEARTBEAT_COUNTER_REGRESSED` |
+| `crasher` | Honest, then silent after `--crash-after` heartbeats (T3: the broker should notice the silence) | accepted, then no more requests |
 
 | `result --behaviour` | Demonstrates | Expected code |
 |---|---|---|
@@ -139,6 +140,17 @@ Attacker behaviours (use only on your own local broker):
 | `tamper_ciphertext` | T4: ciphertext changed before signing | `RESULT_INTEGRITY_FAILED` |
 | `tamper_in_transit` | Ciphertext changed after signing | `NODE_SIGNATURE_INVALID` |
 | `replay` | Captured result resent | first accepted, then `HEARTBEAT_REPLAYED` |
+
+**Fleet and demo runners** (use only on your own local broker):
+
+```bash
+python -m fogtrust_crypto.fleet --server http://127.0.0.1:8000 --tokens-file tokens.txt --duration 60   # T3, T6: several nodes, one per profile
+python -m fogtrust_crypto.demo  --server http://127.0.0.1:8000                                          # T1, T2: PASS/FAIL table, exit code 1 on any mismatch
+python -m fogtrust_crypto.demo  --server ... --state-dir demo-state --task-ids <5 task ids>              # adds the encrypted-result steps (T4)
+python -m fogtrust_crypto.bench_live --server http://127.0.0.1:8000 --count 300                         # latency
+```
+
+The fleet needs one enrollment token per node (each works once). The demo needs one token, and for the result steps five tasks assigned to the demo node, so run it once with `--state-dir` to enroll, assign the tasks, then run it again with `--task-ids`.
 
 `keys/` is git-ignored. The state file next to the key holds the node id, the heartbeat counter and (for replay demos) one captured request. The counter is saved **before** each send, so a number is never reused. On Windows, file mode bits do nothing: keep `keys/` in a folder only your account can read, and not in OneDrive.
 
@@ -154,5 +166,7 @@ The verifier stops at the first failed check. Measured (`crypto-measurements.md`
 - A node that loses its counter file sends counters the server rejects; it must be re-enrolled.
 - Node clocks must be within `timestamp_window_s` of the server.
 - A forged result written directly to the database cannot be told apart from a real one (section 6).
-- The in-memory replay store forgets everything on restart; the database store (used by the endpoint) does not.
+- The in-memory replay store forgets everything on restart; the database store (used by the endpoints) does not.
+- Anyone with write access to the database can insert a brand-new result that looks valid (anyone can encrypt to the server's public key). Editing an existing result is caught (AES-GCM, checked when it is read); forging a new one is not. See the threat model, CR-11.
+- The server has one long-term result key and no rotation: whoever steals it can read every stored result.
 - Rate limiting that bounds nonce growth is Member 1's throttle (120 per minute per node); the engine itself only purges.

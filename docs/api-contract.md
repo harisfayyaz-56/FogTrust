@@ -350,8 +350,8 @@ A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original t
   "nonce": "base64, 16 chars (12 bytes)",
   "ciphertext": "base64, AES-256-GCM output (data + 16-byte tag), at most 65536 chars"
 }
-// 200
-{"accepted": true}
+// 201
+{"accepted": true, "task_id": "<uuid>", "status": "completed"}
 ```
 
 - The node encrypts to the server's long-term X25519 public key (ECDH with a new ephemeral key per result, HKDF-SHA256, AES-256-GCM).
@@ -359,9 +359,12 @@ A repeated `POST /tasks/` with the same `Idempotency-Key` returns the original t
 - There is no separate envelope signature: the request signature (2.2) covers the body hash, so it already covers the ciphertext.
 - Check order: size, steps 1 to 6 of 2.2, task assigned to this node (else `RESULT_NOT_ASSIGNED`), JSON parse, envelope fields
   (`VALIDATION_ERROR`), GCM tag (`RESULT_INTEGRITY_FAILED`). The server stores `plaintext_sha256`, never the plaintext where avoidable.
-- A result for a task that already has one is the caller's `TASK_INVALID_STATE`.
-- **Open for Member 1 (proposal):** the server's X25519 public key is returned in the enrollment response as `server_public_key`
-  (section 5.4); the private key is loaded from a 0600 file named by `FOGTRUST_RESULT_KEY_FILE` and kept out of git.
+- Only an `assigned` task accepts a result. One conditional `UPDATE` decides who completes it, so two valid-looking submissions cannot both win: the second gets `409 TASK_INVALID_STATE`. A task that does not exist, or belongs to another node, gets the same `403 RESULT_NOT_ASSIGNED` (a node cannot probe which task ids exist).
+- A result that passes the signature but fails the AES-GCM check is `422 RESULT_INTEGRITY_FAILED`, is kept as a failed `TaskResult` for the evidence view, and leaves the task `assigned`.
+- Rate limits: 60 per minute per (node id, client address), 600 per minute per client address.
+- Without a configured server key the endpoint answers a plain `500 INTERNAL_ERROR`; the cause is only in the audit log.
+- `GET /tasks/{id}/result/` (operator, admin; `no-store`) returns `{task, node, received_at, integrity_valid, reason_code, plaintext_sha256, result, result_text}`. It **decrypts at read time**, so a ciphertext edited in the database shows `integrity_valid: false` and an audit event `result.integrity_failure_at_rest`. Every view is audited (`result.view`). Unknown task: `404`.
+- The server's X25519 public key is returned in the enrollment response as `server_public_key` (section 5.4, built by Member 1); the private key is loaded from a 0600 file named by `FOGTRUST_RESULT_KEY_FILE` and kept out of git.
 
 ### 5.8 Trust and policy — Member 3 (*Proposed*)
 
@@ -459,4 +462,6 @@ mention it in the PR description.
 | 2026-11-06 | 0.2 | Section 2.2: PATH includes the query string; raw body bytes are hashed; malformed signed headers return `NODE_SIGNATURE_INVALID` (see node-signing-spec.md) | Member 2 |
 | 2026-11-06 | 0.3 | Auth endpoints built: logout returns 204, `/me` adds `session_idle_timeout`, 8-hour absolute session limit, per-username login limit; audit verify adds `problem` | Member 1 |
 | 2026-11-07 | 0.4 | Week 3 built (Member 1): enrollment tokens, `POST /nodes/enroll/`, node list and detail, revocation, `/users/`, `/decisions/`. Enrollment response adds `capacity` and `server_public_key`; node responses add `revoke_source`; audit action `user.enable`; settings `NUM_PROXIES=0` so throttles cannot be bypassed with a forged `X-Forwarded-For` | Member 1 |
-| 2026-11-08 | 0.5 | Section 5.5: heartbeat endpoint built (response codes, rate limits, history endpoint fields and filters); `data-model.md` 3.4 now has two tables (`Heartbeat`, `UsedNonce`). Re-recorded from Week 4 (Member 2): section 2.2 canonical header spellings, the specific `code` is visible to the client (accepted risk), `Content-Length` pre-check | Member 2 |
+| 2026-11-08 | 0.5 | Section 5.5: heartbeat endpoint built (response codes, rate limits, history endpoint fields and filters); `data-model.md` 3.4 first had two tables (`Heartbeat`, `UsedNonce`); `UsedNonce` was removed in 0.7. Re-recorded from Week 4 (Member 2): section 2.2 canonical header spellings, the specific `code` is visible to the client (accepted risk), `Content-Length` pre-check | Member 2 |
+| 2026-11-08 | 0.6 | Week 4 hardening (Member 1): `/node-api/tasks/next/` now verifies the signed request (until now it trusted a bare `X-Node-Id` header); signed node requests run signature, timestamp window (policy `timestamp_window_s`, bounded 5 to 300 s, default 30) and one-time nonce, backed by the database so replays stay refused after a restart; refusals audited as `node.auth` / failure; a failed signature never changes a node's trust score; new nodes start at the policy's `initial_score`; auto-revocation goes through the revocation service (so `node_revoked` fires); settings `NODE_REQUEST_RATE_LIMIT`, `NODE_AUTH_FAILED_RATE_LIMIT` | Member 1 |
+| 2026-11-09 | 0.7 | Section 5.7: result endpoint built (201 response, task-state rule, failed attempts kept, rate limits, `GET` decrypts at read time and audits every view). `data-model.md` 3.4 and 3.6 updated: heartbeats use Member 1's shared `NodeNonce` store (the duplicate `UsedNonce` table is removed) | Member 2 |

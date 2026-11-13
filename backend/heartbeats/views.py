@@ -29,10 +29,10 @@ from fogtrust_crypto.heartbeat import MAX_HEARTBEAT_BODY_BYTES, parse_heartbeat_
 from fogtrust_crypto.node_auth import declared_length_too_large
 from nodes.models import Node
 from nodes.node_auth import lookup_node
+from nodes.replay_store import DatabaseReplayStore
 
 from .models import Heartbeat
 from .policy import current_policy
-from .replay_store import DatabaseReplayStore
 from .serializers import HeartbeatQuerySerializer, HeartbeatSerializer
 from .throttles import IPHeartbeatThrottle, NodeHeartbeatThrottle
 
