@@ -15,6 +15,9 @@ urlpatterns = [
     path("api/v1/users/", include("accounts.users_urls")),
     path("api/v1/audit/", include("audit.urls")),
     path("api/v1/", include("nodes.urls")),
+    path("api/v1/tasks/", include("tasks.urls")),
+    path("api/v1/node-api/tasks/", include("tasks.node_urls")),
+    path("api/v1/", include("trust.urls")),
     path("api/v1/", include("heartbeats.urls")),
 ]
 

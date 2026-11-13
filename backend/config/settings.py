@@ -63,6 +63,8 @@ INSTALLED_APPS = [
     "accounts",
     "audit",
     "nodes",
+    "trust",
+    "tasks",
     "heartbeats",
 ]
 

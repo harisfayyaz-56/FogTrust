@@ -92,9 +92,8 @@ def test_every_route_in_the_api_is_covered_by_this_matrix():
 
     listed = {path for _, path, _ in ENDPOINTS}
     public = {"/api/v1/health/", "/api/v1/auth/csrf/", "/api/v1/auth/login/", "/api/v1/nodes/enroll/"}
-    signed_node_routes = {"/api/v1/node-api/heartbeat/"}  # no session: authenticated by signature, tested in heartbeats/tests
     auth_routes = {"/api/v1/auth/logout/", "/api/v1/auth/me/"}  # tested in accounts/tests
-    node_routes = {"/api/v1/node-api/tasks/next/"}  # signed requests: test_node_authentication.py
+    node_routes = {"/api/v1/node-api/tasks/next/", "/api/v1/node-api/heartbeat/"}  # signed requests: test_node_authentication.py, heartbeats/tests
 
     def walk(patterns, prefix=""):
         for pattern in patterns:
@@ -104,8 +103,37 @@ def test_every_route_in_the_api_is_covered_by_this_matrix():
             else:
                 yield route
 
-    routes = {"/" + r.replace("<str:node_id>", "{node}").replace("<str:token_id>", "{token}").replace("<str:user_id>", "1")
-              for r in walk(get_resolver().url_patterns)
-              if r.startswith("api/v1/")}
-    unlisted = {r for r in routes if r.split("{")[0] not in covered and r not in public | auth_routes | signed_node_routes}
+    placeholders = {"<str:node_id>": "{node}", "<uuid:node_id>": "{node}", "<str:token_id>": "{token}",
+                    "<uuid:id>": "{task}", "<str:user_id>": "{user}"}
+    routes = set()
+    for route in walk(get_resolver().url_patterns):
+        if route.startswith("api/v1/"):
+            for old, new in placeholders.items():
+                route = route.replace(old, new)
+            routes.add("/" + route)
+
+    unlisted = routes - listed - public - auth_routes - node_routes
     assert not unlisted, f"endpoints missing from the access matrix: {sorted(unlisted)}"
+    stale = (listed | node_routes) - routes
+    assert not stale, f"the matrix lists routes that no longer exist: {sorted(stale)}"
+
+
+@pytest.mark.django_db
+class TestHumansCannotUseTheNodeEndpoint:
+    """A signed-in administrator is not a node: only a valid node signature opens /node-api/."""
+
+    @pytest.mark.parametrize("role", ["admin", "operator", "viewer"])
+    def test_a_staff_session_is_not_a_node_credential(self, client_as, node_factory, role):
+        node, _ = node_factory()
+        client = client_as(role)
+        response = client.get("/api/v1/node-api/tasks/next/", HTTP_X_NODE_ID=str(node.id))
+
+        assert response.status_code == 401 and response.json()["error"]["code"] == "NODE_SIGNATURE_MISSING"
+
+    def test_a_node_signature_is_not_a_staff_credential(self, api_client, node_factory):
+        from fogtrust_crypto.node_auth import sign_request
+
+        node, key = node_factory()
+        path = "/api/v1/nodes/"
+        headers = {"HTTP_" + n.upper().replace("-", "_"): v for n, v in sign_request(key, str(node.id), "GET", path, b"").items()}
+        assert api_client.get(path, **headers).status_code == 401
