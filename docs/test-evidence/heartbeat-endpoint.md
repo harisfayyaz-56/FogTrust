@@ -52,7 +52,21 @@ heartbeat history: 12 rows = 5 accepted, 7 rejected
    rejected: REPLAYED x2, SIGNATURE_INVALID x2, STALE x1, COUNTER_REGRESSED x2
 decisions (heartbeat): 7 deny rows, one per rejection, none for accepted heartbeats
 audit events heartbeat.rejected: 7
-used nonces: 7
+nonces stored: 7
 ```
 
 This is the Week 2 "Friday check" (an honest node enrolls and heartbeats), plus the attackers.
+
+## 3. Fleet and latency over HTTP (real Django server)
+
+**Fleet** (`python -m fogtrust_crypto.fleet`, 6 nodes, 12 seconds, one heartbeat per second per node):
+
+| Node | Profile | Heartbeats | Outcomes |
+|---|---|---|---|
+| fleet-01 to fleet-04 | honest | 12 each | 200 OK x12 each |
+| fleet-05-crasher | crasher | 4 | 200 OK x3, then silent (the broker should detect it: Member 3's stall detection) |
+| fleet-06-replayer | replayer | 12 | 200 OK x1, 401 `HEARTBEAT_REPLAYED` x11 |
+
+Database afterwards: the four honest nodes have `last_counter` 12 and 12 accepted rows; the crasher has `last_counter` 3; the replayer has `last_counter` 1, one accepted row and eleven `HEARTBEAT_REPLAYED` rows. No traceback in the server log.
+
+**Latency** (`python -m fogtrust_crypto.bench_live`, 300 sequential heartbeats, client-side, signing excluded): median **7.1 ms**, 95th percentile 7.9 ms, 99th 9.1 ms, maximum 28 ms, 0 failures. Machine: Linux x86_64, Python 3.12, Django's single-threaded development server with SQLite, rate limits raised for the run. This includes the database writes (nonce, heartbeat row, node update). Re-run on your own laptop and quote that run.
