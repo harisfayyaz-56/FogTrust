@@ -1,0 +1,215 @@
+{
+  "description": "Encrypted result cases, replayed in order against a fresh replay store. TEST DATA ONLY.",
+  "server_time": 1763547631,
+  "timestamp_window_s": 30,
+  "node": {
+    "id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+    "public_key": "nKRS/LSkkvJMR6kA/adjSBDs7GAyXHbe5V72/kbgpDc=",
+    "status": "active"
+  },
+  "server_public_key": "pGbuXpxfBsB9Hyin4xM1FIenH59CDqL+XaR4y/D8ZUQ=",
+  "task_id": "d1603f2b-6449-7a7a-fbdc-118a89e909f1",
+  "plaintext_sha256": "f85ee2859e7757b5bcf33d720ead3c508e04e0d997845cfab9bf5aebe6569086",
+  "cases": [
+    {
+      "name": "valid",
+      "description": "A normal encrypted result for a task assigned to this node.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "326f1cb7ff04ab312de9b9c473be87cf",
+          "X-Node-Signature": "eRzIaBBMSNwWpxepmQYQehSe0pj3lRKE2hD4QKyYHfdhber+MdIoDoXxjbKiMbgv8UjKL/D0CumCGZI//0skAA=="
+        },
+        "body": "{\"ephemeral_public_key\":\"3HmGYJOxq5u9W9zNb/kGVvHzbTNQ+fsf0b5p9rH2JW8=\",\"nonce\":\"fUQaGau0VmVp52Ea\",\"ciphertext\":\"MNfMpo0mAZHrnofjl7i1vK1918i1/kWt5S0en9Vm\"}"
+      },
+      "expected": {
+        "accepted": true,
+        "reason_code": "OK"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "replay",
+      "description": "An exact copy of case 1.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "326f1cb7ff04ab312de9b9c473be87cf",
+          "X-Node-Signature": "eRzIaBBMSNwWpxepmQYQehSe0pj3lRKE2hD4QKyYHfdhber+MdIoDoXxjbKiMbgv8UjKL/D0CumCGZI//0skAA=="
+        },
+        "body": "{\"ephemeral_public_key\":\"3HmGYJOxq5u9W9zNb/kGVvHzbTNQ+fsf0b5p9rH2JW8=\",\"nonce\":\"fUQaGau0VmVp52Ea\",\"ciphertext\":\"MNfMpo0mAZHrnofjl7i1vK1918i1/kWt5S0en9Vm\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "HEARTBEAT_REPLAYED"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "ciphertext-altered-before-signing",
+      "description": "One ciphertext byte changed, then the node signs it: only AES-GCM can catch this (T4).",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "0e315aaf0490489f81a0dfbe64d294e9",
+          "X-Node-Signature": "1dPASKAS6/0oqvjDnh/hBZ9zj2kBuObpR19hpZHMdJyFkOUOLX8R/2+RRwR/2YOfKwgpipKHIYFceOBzu6ZGBw=="
+        },
+        "body": "{\"ephemeral_public_key\":\"xtRZIC+4oKc9eDxe+pOBdQdJz25sVa7ARInceRV3+WU=\",\"nonce\":\"IeQahaaElvbXqNh8\",\"ciphertext\":\"P5dnsrKbvCft1uy7ukDi1ZubCyMyuxCi93QSp8yr\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "RESULT_INTEGRITY_FAILED"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "ciphertext-altered-in-transit",
+      "description": "The ciphertext was changed after signing.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "6b5e8f897f1337ce1495d9efb62ff3e8",
+          "X-Node-Signature": "ayghqVl6ykqS64AGSDp8h9oPJNYsizS0XX2kjZTkkgrJ0LUr0xWMaz0eo3wx2ZO//VTRvNS9p9zMzMYzFq4GDg=="
+        },
+        "body": "{\"ephemeral_public_key\":\"tIqV6DIMfYft5kUtJliCjNExwvf0UHmtfxH10X7oK3E=\",\"nonce\":\"VTNX05J9j9Ktnlfb\",\"ciphertext\":\"AUfxKG0w5P5M4eKJlUs/cF7VYUWEuMwKe0+sTSCb\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_SIGNATURE_INVALID"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "ciphertext-for-another-task",
+      "description": "A ciphertext made for a different task.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "81e7bd6bccc2cc1b5bf765e346f0e81a",
+          "X-Node-Signature": "AAaDNl8k0ag79cpqCJPIKEbECV9rwTOtOTo4HeRfav49TeScHuOhETxxdAb7Aci2uytjAA6vXbpAK72y8QDNCQ=="
+        },
+        "body": "{\"ephemeral_public_key\":\"/L+UycESLhXAmE38XvO2S5TK9ZsYihRby5vVxFQyc2o=\",\"nonce\":\"5e4GNVGABM5hhEgq\",\"ciphertext\":\"Kro/bj9fdBCuRBuhLMjJiSde0FbC5DNQ8ZJCUTlh\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "RESULT_INTEGRITY_FAILED"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "task-assigned-elsewhere",
+      "description": "The task belongs to another node.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "b8a1b2ce0510d1d554bb004ec085832b",
+          "X-Node-Signature": "xWjspJnqWexdKM8WszPiUERqE62Sn0uT2fFC2JbCI8Tl+VCJ/TusuVwutQTQI3dzZQss+HT6A/oLn32+31ChBg=="
+        },
+        "body": "{\"ephemeral_public_key\":\"SFNr55zuUYaB/VKSBPO3taQqQK+4J62cDU1KKpfzlxQ=\",\"nonce\":\"AICOVkHjWDnOg3UF\",\"ciphertext\":\"EKLu+fvh493ESMAsh0eLAqoWTE+Y7JciCZIQhQ6D\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "RESULT_NOT_ASSIGNED"
+      },
+      "task_assigned_to": "other"
+    },
+    {
+      "name": "signed-with-wrong-key",
+      "description": "Signed with a key the broker never registered.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "09dbdc689319e9b548f489ac5006bcb3",
+          "X-Node-Signature": "pgHcP8m7wY2dRsDn1hk2JrCK3wThYD7MvnzwY8cJ0BzRUmxUsiZYFxIQ3kaMwgMPGREaXynd4R4uXC38tHFODQ=="
+        },
+        "body": "{\"ephemeral_public_key\":\"WK9OX3HyBaaUEHhsphN1Rsb9IqOIWGhryUHU/i9lKUU=\",\"nonce\":\"VDrAjKA3V4ZqIudR\",\"ciphertext\":\"zloyDfeLAH4mm6OM8pulK0hzWhyKN03fZdmsZ2QE\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_SIGNATURE_INVALID"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "stale",
+      "description": "Timestamp an hour in the past.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763544031",
+          "X-Node-Nonce": "9ed54eeeee9820ca47f2b68924371a2a",
+          "X-Node-Signature": "P4VsIfWt7WtcV0fuXMA80Eo0xZmo3IvqmR49TS0rKkXIGxkz/xgKAFrCmRAZc25yFYXPJ7uFnLtR4LmNL+4ZDA=="
+        },
+        "body": "{\"ephemeral_public_key\":\"ne17aZWNj7tpqA1dTGhPxDtg5A9ykVFAzc3meGwdKRg=\",\"nonce\":\"P1szD6LEFlZX38s6\",\"ciphertext\":\"lNvEfB88aEWXwhsXGHvw6bjn1HPY9aLnJk9QGtXd\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "HEARTBEAT_STALE"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "body-not-json",
+      "description": "Validly signed, but the body is not JSON.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "d77100578c42def25b6d35102240d588",
+          "X-Node-Signature": "TnDv0UUNlCK8/aRISUSDBBuYdACCnCSFDYE2/oZ4hnNOFEr81Q1B6QsusWb8+dPTLbMm8MSo/t7/FiZPpcUVDQ=="
+        },
+        "body": "not json"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "MALFORMED_REQUEST"
+      },
+      "task_assigned_to": "node"
+    },
+    {
+      "name": "envelope-missing-fields",
+      "description": "Validly signed JSON, but not an encrypted-result envelope.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/tasks/d1603f2b-6449-7a7a-fbdc-118a89e909f1/result/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "abfe9b0396860741681813433648d88d",
+          "X-Node-Signature": "6waEjdAFjkHABSL/TEJ2VAeGMgET+PsqJqjPGfiY4ZnBLsHYYwMNHEVlASFT0+aZDI/IzCae/8ffMv1AmKFlDA=="
+        },
+        "body": "{\"ciphertext\":\"AAAA\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "VALIDATION_ERROR"
+      },
+      "task_assigned_to": "node"
+    }
+  ]
+}

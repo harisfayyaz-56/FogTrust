@@ -15,6 +15,7 @@ import json
 import uuid
 
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -25,13 +26,15 @@ from audit.services import log_event
 from core.decisions import record_decision_dict
 from core.errors import APIError, ErrorCode
 from fogtrust_crypto import codes
-from fogtrust_crypto.node_auth import declared_length_too_large
+from fogtrust_crypto.node_auth import declared_length_too_large, verify_node_request
 from fogtrust_crypto.results import MAX_CIPHERTEXT_B64, MAX_RESULT_BODY_BYTES, decrypt_envelope, verify_result_request
 from heartbeats.policy import current_policy
 from nodes.replay_store import DatabaseReplayStore
+from nodes.models import Node
 from nodes.node_auth import lookup_node
 from nodes.server_keys import load_server_private_key
 from tasks.models import Task
+from trust.services import recompute_node_score
 
 from .models import TaskResult
 from .throttles import IPResultThrottle, NodeResultThrottle
@@ -70,23 +73,29 @@ class NodeResultView(APIView):
                       reason_code=ErrorCode.PAYLOAD_TOO_LARGE, details={"limit_bytes": MAX_RESULT_BODY_BYTES})
             raise APIError(ErrorCode.PAYLOAD_TOO_LARGE)
 
-        server_key = load_server_private_key()
-        if server_key is None:  # a deployment mistake, not the node's fault: say so in the log, not to the node
-            log_event("result.rejected", "failure", request=request, actor_type="system",
-                      reason_code=ErrorCode.INTERNAL_ERROR, details={"cause": "FOGTRUST_RESULT_KEY_FILE not configured"})
-            raise APIError(ErrorCode.INTERNAL_ERROR)
-
         raw_body = request.body  # the exact signed bytes
+        server_key = load_server_private_key()
         window_s, _interval, policy_version = current_policy()
         task_uuid = _uuid_or_none(task_id)
         task = Task.objects.filter(pk=task_uuid).first() if task_uuid else None
         assigned = str(task.assigned_node_id) if task and task.assigned_node_id else None
 
+        now = timezone.now()
+        if server_key is None:
+            # A deployment mistake, not the caller's fault. But an unsigned caller must never be able to tell:
+            # authenticate first, and only a genuine node gets the 500. (Found by test_all_node_routes_signed.)
+            early = verify_node_request(request.headers, request.method, request.get_full_path(), raw_body, lookup_node)
+            if not early.accepted:
+                self._reject(request, early, raw_body, task, policy_version, now)
+                raise APIError(early.reason_code)
+            log_event("result.rejected", "failure", request=request, actor_type="system",
+                      reason_code=ErrorCode.INTERNAL_ERROR, details={"cause": "FOGTRUST_RESULT_KEY_FILE not configured"})
+            raise APIError(ErrorCode.INTERNAL_ERROR)
+
         outcome = verify_result_request(
             request.headers, request.method, request.get_full_path(), raw_body, lookup_node,
             DatabaseReplayStore(), server_key, str(task_id), assigned, window_s=window_s,
         )
-        now = timezone.now()
         if not outcome.accepted:
             self._reject(request, outcome.result, raw_body, task, policy_version, now)
             raise APIError(outcome.result.reason_code)
@@ -103,6 +112,9 @@ class NodeResultView(APIView):
                     task=task, node_id=node_id, integrity_valid=True, plaintext_sha256=outcome.plaintext_sha256,
                     received_at=now, **envelope,
                 )
+                # The node has room again. (assign_next_task adds 1 on assignment; without this a node that keeps
+                # finishing tasks would count as full for ever and stop receiving work.)
+                Node.objects.filter(pk=node_id, current_load__gt=0).update(current_load=F("current_load") - 1)
         if won != 1:
             task.refresh_from_db()
             result = outcome.result
@@ -120,6 +132,8 @@ class NodeResultView(APIView):
         record_decision_dict(decision, request=request)
         log_event("result.accepted", "success", request=request, actor_type="node", actor_id=node_id, actor_role="node",
                   target_type="task", target_id=str(task.id), details=outcome.result.evidence)
+        # A verified result is evidence the node did its job (authenticated: only the node can sign it).
+        recompute_node_score(Node.objects.get(pk=node_id), increment_task_successes=1, request=request)
         response = Response({"accepted": True, "task_id": str(task.id), "status": "completed"}, status=201)
         response["Cache-Control"] = "no-store"
         return response
@@ -144,6 +158,11 @@ class NodeResultView(APIView):
                     task=task, node_id=result.node_id, integrity_valid=False, plaintext_sha256=None,
                     reason_code=codes.RESULT_INTEGRITY_FAILED, received_at=now, **envelope,
                 )
+            # Trust: this is the ONE failure that is safely the node's own. It needed the node's valid signature over
+            # the damaged ciphertext, which an attacker cannot produce. Signature failures, replays, stale timestamps
+            # and counter regressions are NOT counted against a node: an attacker can cause every one of them
+            # with the victim's id (see threat model CR-20).
+            recompute_node_score(Node.objects.get(pk=result.node_id), increment_integrity_failures=1, request=request)
 
 
 class ResultDetailView(APIView):

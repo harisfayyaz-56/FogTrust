@@ -4,7 +4,7 @@
 |---|---|
 | Slice | Member 2 (FR-2 signed heartbeat, FR-5 encrypted results) |
 | Method | STRIDE per trust boundary (same boundaries as [identity-access-audit.md](identity-access-audit.md)) |
-| Version | 0.5 (Week 4) |
+| Version | 0.6 (Week 5) |
 
 Status: **Built** means code and a passing test exist today. **Partly built** and **Open** are explained in the row.
 Test names are in `backend/fogtrust_crypto/tests/`. Evidence tables for T2 and T4 are in [../test-evidence/crypto-T2-T4.md](../test-evidence/crypto-T2-T4.md).
@@ -31,5 +31,8 @@ Test names are in `backend/fogtrust_crypto/tests/`. Evidence tables for T2 and T
 
 | CR-18 | **A task completed twice, or a result for someone else's task** | Tampering, Elevation of privilege | TB2 | One conditional `UPDATE` completes a task only while it is `assigned` to the submitting node; unknown and foreign task ids give the same refusal | `test_a_second_fresh_submission_for_a_completed_task_is_refused`, `test_task_assigned_to_another_node_is_refused`, `test_unknown_or_malformed_task_ids_look_the_same_as_not_assigned` | Built |
 | CR-19 | **Decrypted results exposed**: viewed by the wrong role, cached, or logged | Information disclosure | TB1, TB3 | `results.view` is operator and admin only; `Cache-Control: no-store`; every view is audited; plaintext never stored, logged or placed in a Decision | `test_viewer_and_anonymous_are_refused`, `test_nothing_secret_reaches_decisions_or_audit`, `test_honest_result_completes_the_task_and_stores_only_ciphertext` | Built |
+
+| CR-20 | **Trust poisoning**: a stranger lowers a victim's trust score, or gets it auto-revoked, by sending bad requests that carry the victim's node id | Denial of service, Spoofing | TB2, TB5 | Only failures that need the node's own valid signature may lower trust: a damaged result. Signature failures, replays, stale timestamps, counter regressions and wrong-task requests are refused but never scored. With the default weights (-20 per signature failure, auto-revoke below 10) scoring them would let anyone revoke any node in four requests | `TestAnAttackerCannotPoisonAVictimsTrust` (4), `test_rejected_heartbeats_do_not_keep_a_silent_worker_alive` | Built |
+| CR-21 | **Misconfiguration oracle**: an unsigned caller learns the server's result key is missing (a 500 for everyone) | Information disclosure | TB2 | The result endpoint authenticates first; only a genuine signed node ever gets the 500 | `test_an_unsigned_caller_cannot_tell_that_the_server_key_is_missing`, `test_no_node_route_answers_an_unsigned_caller` | Built |
 
 Rule for all entries: private keys and plaintext results are never logged.
