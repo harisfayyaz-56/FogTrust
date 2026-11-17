@@ -268,6 +268,17 @@ class TestInputLimitsAndConfiguration:
         assert "RESULT_KEY_FILE" not in response.content.decode()
         assert AuditEvent.objects.filter(action="result.rejected", reason_code="INTERNAL_ERROR").exists()
 
+    def test_an_unsigned_caller_cannot_tell_that_the_server_key_is_missing(self, api_client, enrolled, make_task, settings):
+        """Found by test_all_node_routes_signed: this used to answer 500 to anyone, revealing the misconfiguration."""
+        from nodes import server_keys
+
+        settings.RESULT_KEY_FILE = ""
+        server_keys._load.cache_clear()
+        node, _ = enrolled
+        task = make_task(node)
+        response = api_client.post(path_for(task.id), data=b"{}", content_type="application/json")
+        assert response.status_code == 401 and code_of(response) == "NODE_SIGNATURE_MISSING"
+
     def test_rate_limit(self, api_client, enrolled, server_key, make_task, monkeypatch):
         monkeypatch.setattr(NodeResultThrottle, "rate", "2/min")
         node, key = enrolled

@@ -66,6 +66,12 @@ python -m pytest
 | [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
 | [docs/test-evidence/](docs/test-evidence/) | Input, expected, actual and result for T1 to T5 and T-final, with measurements |
 | [docs/decisions/](docs/decisions/) | Architecture decision records |
+| [docs/guide-node-and-crypto.md](docs/guide-node-and-crypto.md) | User and administrator guide: node keys, enrollment, rejection codes, server key, policy, revocation |
+| [docs/node-signing-spec.md](docs/node-signing-spec.md) | How requests are signed, replay defence, result encryption |
+| [docs/security-review-api.md](docs/security-review-api.md) | Every API route, how it is authenticated, and the findings |
+| [docs/diagrams/crypto-slice-dataflow.md](docs/diagrams/crypto-slice-dataflow.md) | Data flow and trust boundaries for nodes and results |
+| [docs/sample-data/](docs/sample-data/) | Sanitized signed requests with their expected outcomes |
+| [docs/crypto-limitations-ethics.md](docs/crypto-limitations-ethics.md), [docs/demo-script-crypto.md](docs/demo-script-crypto.md), [docs/report-section-crypto.md](docs/report-section-crypto.md) | Limitations and ethics, demo script, report section for this slice |
 
 ## Status
 
@@ -73,6 +79,6 @@ python -m pytest
 |---|---|---|
 | 1 | Requirements, data model, API contract, threat model, skeleton | Done |
 | 2 | Authentication, audit log, one end-to-end slice | Done |
-| 3 | Security engine, dashboard, features | In progress: identity, enrollment, revocation, users, evidence view, replay defence, encrypted results, trust engine, task queue and signed node authentication done; heartbeat endpoint, result endpoint and dashboard pending |
-| 4 | Integration, adversarial tests, measurement, hardening | Planned |
-| 5 | Fixes, evaluation, documentation, demo | Planned |
+| 3 | Security engine, dashboard, features | Backend done: identity, enrollment, revocation, users, evidence data, replay defence, encrypted results, trust engine, task queue, signed node authentication, heartbeat and result endpoints. Dashboard pending |
+| 4 | Integration, adversarial tests, measurement, hardening | Backend done: attack runs T1 to T5, fuzzing, measurements, security review (see test-evidence). Dashboard integration pending |
+| 5 | Fixes, evaluation, documentation, demo | In progress |

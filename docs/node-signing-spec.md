@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.5 (Week 4) |
+| Version | 0.6 (Week 5) |
 | Author | Member 2 |
 | Implements | [api-contract.md](api-contract.md) sections 2.2, 5.5 and 5.7 (contract version 0.2), and the enrollment proof in 5.4 |
 | Code | `backend/fogtrust_crypto/` (`keys.py`, `node_auth.py`, `replay.py`, `heartbeat.py`, `results.py`, `result.py`, `node_sim.py`) |
@@ -169,4 +169,5 @@ The verifier stops at the first failed check. Measured (`crypto-measurements.md`
 - The in-memory replay store forgets everything on restart; the database store (used by the endpoints) does not.
 - Anyone with write access to the database can insert a brand-new result that looks valid (anyone can encrypt to the server's public key). Editing an existing result is caught (AES-GCM, checked when it is read); forging a new one is not. See the threat model, CR-11.
 - The server has one long-term result key and no rotation: whoever steals it can read every stored result.
+- Trust is scored only on failures a stranger cannot cause (a damaged result). Missed heartbeats are not yet scored: the rule exists in the trust engine but nothing feeds it (security review, finding 5).
 - Rate limiting that bounds nonce growth is Member 1's throttle (120 per minute per node); the engine itself only purges.
