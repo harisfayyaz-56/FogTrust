@@ -34,6 +34,8 @@ class Decision(models.Model):
         REVOKE = "revoke", "Revoke"
         SCORE = "score", "Score"
 
+    DecisionOutcome = Verdict  # the name Member 3's scoring and task code already uses
+
     decision_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     subject_type = models.CharField(max_length=16, choices=SubjectType.choices, db_index=True)
     subject_id = models.CharField(max_length=64, blank=True, db_index=True)

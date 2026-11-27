@@ -74,7 +74,15 @@ npm run build
 | [docs/api-contract.md](docs/api-contract.md) | Endpoints, request and response shapes, roles, error codes |
 | [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
 | [docs/test-evidence/](docs/test-evidence/) | Input, expected, actual and result for T1 to T5 and T-final, with measurements |
-| [docs/decisions/](docs/decisions/) | Architecture decision records |
+| [docs/guide-identity-admin.md](docs/guide-identity-admin.md) | User and administrator guide: roles, sign-in, users, enrollment tokens, revocation, audit log |
+| [docs/diagrams/identity-slice-dataflow.md](docs/diagrams/identity-slice-dataflow.md) | Data flow and trust boundaries for people, enrollment and the audit log |
+| [docs/identity-limitations-ethics.md](docs/identity-limitations-ethics.md), [docs/demo-script-identity.md](docs/demo-script-identity.md), [docs/report-section-identity.md](docs/report-section-identity.md) | Limitations and ethics, demo script, report section for the identity slice |
+| [docs/guide-node-and-crypto.md](docs/guide-node-and-crypto.md) | User and administrator guide: node keys, enrollment, rejection codes, server key, policy, revocation |
+| [docs/node-signing-spec.md](docs/node-signing-spec.md) | How requests are signed, replay defence, result encryption |
+| [docs/security-review-api.md](docs/security-review-api.md) | Every API route, how it is authenticated, and the findings |
+| [docs/diagrams/crypto-slice-dataflow.md](docs/diagrams/crypto-slice-dataflow.md) | Data flow and trust boundaries for nodes and results |
+| [docs/sample-data/](docs/sample-data/) | Sanitized signed requests with their expected outcomes |
+| [docs/crypto-limitations-ethics.md](docs/crypto-limitations-ethics.md), [docs/demo-script-crypto.md](docs/demo-script-crypto.md), [docs/report-section-crypto.md](docs/report-section-crypto.md) | Limitations and ethics, demo script, report section for this slice |
 
 ## Status
 
@@ -82,6 +90,6 @@ npm run build
 |---|---|---|
 | 1 | Requirements, data model, API contract, threat model, skeleton | Done |
 | 2 | Authentication, audit log, one end-to-end slice | Done |
-| 3 | Security engine, dashboard, features | Dashboard Phase 2 done: node status, trust detail, task history, evidence/rejected heartbeats, admin settings, sanitized reports, state handling, and data-flow docs |
-| 4 | Integration, adversarial tests, measurement, hardening | Planned |
-| 5 | Fixes, evaluation, documentation, demo | Planned |
+| 3 | Security engine, dashboard, features | Done: Identity, enrollment, revocation, users, replay defence, encrypted results, trust engine, task queue, and React dashboard (views, state handling, evidence, reports) |
+| 4 | Integration, adversarial tests, measurement, hardening | Done: Attack runs T1 to T5, fuzzing, measurements, security review, and frontend API integration |
+| 5 | Fixes, evaluation, documentation, demo | In progress |

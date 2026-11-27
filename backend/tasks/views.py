@@ -9,6 +9,7 @@ from accounts.permissions import require
 from audit.services import log_event
 from core.errors import APIError, ErrorCode
 from core.models import Decision
+from nodes.authentication import IsEnrolledNode, NodeRequestThrottle, NodeSignatureAuthentication
 from tasks.models import Task
 from tasks.serializers import TaskDetailSerializer, TaskSubmitSerializer
 from tasks.services import assign_next_task
@@ -150,22 +151,20 @@ class TaskCancelView(APIView):
 
 class NodeNextTaskView(APIView):
     """
-    Endpoint for edge nodes to fetch their assigned task.
-    In testing/integration, node_id is sent via header.
+    Edge nodes poll here for their assigned task.
+
+    The caller is identified by its Ed25519 request signature (X-Node-Id, X-Node-Timestamp,
+    X-Node-Nonce, X-Node-Signature), never by the bare node id: the id is not a secret.
+    A node can only ever read its own task. See nodes/authentication.py.
     """
-    authentication_classes = []
-    permission_classes = []
+
+    authentication_classes = [NodeSignatureAuthentication]
+    permission_classes = [IsEnrolledNode]
+    throttle_classes = [NodeRequestThrottle]
 
     def get(self, request):
-        node_id = request.headers.get("X-Node-Id", "").strip()
-        if not node_id:
-            return Response(
-                {"error": {"code": ErrorCode.NODE_SIGNATURE_MISSING, "message": "X-Node-Id header required"}},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
         task = Task.objects.filter(
-            assigned_node_id=node_id,
+            assigned_node=request.auth,
             status=Task.Status.ASSIGNED,
         ).order_by("priority", "assigned_at").first()
 

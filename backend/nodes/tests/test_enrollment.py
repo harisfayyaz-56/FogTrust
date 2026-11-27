@@ -14,6 +14,7 @@ import json
 from datetime import timedelta
 
 import pytest
+from django.conf import settings
 from django.utils import timezone
 
 from audit.models import AuditEvent
@@ -45,7 +46,7 @@ class TestHappyPath:
         assert "server_public_key" in body
         assert response["Cache-Control"] == "no-store"
         assert node.public_key == public_key_to_b64(key.public_key())
-        assert node.trust_score == 100 and node.current_load == 0 and node.last_counter == 0
+        assert node.trust_score == 80 and node.current_load == 0 and node.last_counter == 0  # policy default
 
     def test_token_is_marked_used_by_exactly_this_node(self, api_client, token_factory):
         token, raw = token_factory()
@@ -70,7 +71,8 @@ class TestHappyPath:
         decision = Decision.objects.get(subject_type="enrollment", decision="allow")
         assert decision.subject_id == str(node.id) and decision.reason_code == "OK"
         assert [rule["rule"] for rule in decision.rules_fired] == [
-            "token_valid", "key_well_formed", "proof_of_possession", "key_unused", "name_unused", "token_redeemed_once",
+            "token_valid", "key_well_formed", "proof_of_possession", "key_unused", "name_unused",
+            "initial_trust_from_policy", "token_redeemed_once",
         ]
         assert all(rule["passed"] for rule in decision.rules_fired)
         assert decision.engine_name == "enrollment_gate" and decision.latency_ms >= 0
@@ -86,6 +88,27 @@ class TestHappyPath:
         )
         for secret in (raw, body["proof"], body["public_key"]):
             assert secret not in stored
+
+    def test_the_starting_trust_score_comes_from_the_policy_and_is_recorded(self, api_client, token_factory):
+        from trust.models import PolicyConfig
+
+        PolicyConfig.objects.create(version=1, values={"initial_score": 65, "weights": {}}, change_reason="lab policy")
+        PolicyConfig.objects.create(version=2, values={"initial_score": 55, "weights": {}}, change_reason="stricter policy")
+        _, raw = token_factory()
+        post_json(api_client, ENROLL_URL, enroll_payload(raw))
+
+        assert Node.objects.get().trust_score == 55  # the CURRENT policy, version 2
+        decision = Decision.objects.get(subject_type="enrollment", decision="allow")
+        assert decision.policy_version == 2 and decision.thresholds == {"initial_score": 55}
+        assert decision.evidence["initial_trust_score"] == 55
+
+    def test_a_nonsense_policy_value_falls_back_to_the_safe_default(self, api_client, token_factory):
+        from trust.models import PolicyConfig
+
+        PolicyConfig.objects.create(version=1, values={"initial_score": 9999, "weights": {}}, change_reason="bad value")
+        _, raw = token_factory()
+        post_json(api_client, ENROLL_URL, enroll_payload(raw))
+        assert Node.objects.get().trust_score == settings.INITIAL_TRUST_SCORE  # whatever the environment configures
 
     def test_capacity_defaults_when_omitted(self, api_client, token_factory):
         _, raw = token_factory()

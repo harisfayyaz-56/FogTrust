@@ -111,7 +111,7 @@ Raw token format: 32 random bytes from `secrets.token_urlsafe(32)` (about 43 cha
 | last_seen_at | datetime | nullable | M2 (accepted heartbeat) |
 | last_counter | bigint | default 0 | M2 (replay defence) |
 | enrolled_at | datetime | | M1 |
-| enrolled_via | FK EnrollmentToken | | M1 |
+| enrolled_via | FK EnrollmentToken, nullable | always set by the enrollment service; nullable only so fixtures can create nodes directly | M1 |
 | revoked_at | datetime | nullable | M1 |
 | revoked_by | FK User | nullable (null = automatic revocation) | M1 |
 | revoke_reason | varchar(500) | required when revoked | M1 |
@@ -123,23 +123,38 @@ Rules:
 - Every node-authenticated endpoint checks `status == active` **before** any other processing.
 - A revoked node is never eligible for task assignment (Member 3 enforces in the scheduler).
 
-### 3.4 Heartbeat — `heartbeats.Heartbeat` (Member 2, *Proposed*)
+### 3.3a NodeNonce — `nodes.NodeNonce` (Member 1) **Built (Week 4)**
+
+The database half of replay defence (node-signing-spec.md). One row per signed request an authenticated node made inside the window.
+
+| Field | Type | Notes |
+|---|---|---|
+| node | FK Node | cascade delete |
+| nonce | char(32) | 16 random bytes as lowercase hex |
+| expires_at | bigint, indexed | Unix seconds: request timestamp + window. Rows older than this are purged (about 1 in 100 inserts) |
+
+UNIQUE (node, nonce) makes "first use wins" atomic: of two copies of one request the database lets exactly one insert succeed. Because it is in the database, a restart does not reopen the window. `fogtrust_crypto.replay.ReplayStore` is implemented by `nodes.replay_store.DatabaseReplayStore` (also holds `advance_counter` for heartbeats, using `Node.last_counter`).
+
+### 3.4 Heartbeat — `heartbeats.Heartbeat` (Member 2)
+
+The history people read. The replay defence is **not** in this table: it is `nodes.NodeNonce` (3.3a), shared by every signed node endpoint, and it is purged; history must outlive the purge.
 
 | Field | Type | Notes |
 |---|---|---|
 | id | bigint | PK |
 | node | FK Node | |
-| counter | bigint | Must be greater than `node.last_counter` |
-| nonce | char(32) | 16 random bytes, hex |
-| sent_at | datetime | Node's claimed timestamp |
+| counter | bigint, null | From the body; null when the body could not be read |
+| nonce | char(32), blank | 16 random bytes, hex; blank when the header was missing or malformed |
+| sent_at | datetime, null | Node's claimed timestamp; null when the body could not be read |
 | received_at | datetime | Server time |
-| reported_load | smallint | |
+| reported_load | smallint, null | |
 | accepted | bool | |
-| reason_code | varchar(48) | e.g. `HEARTBEAT_REPLAYED`; empty when accepted |
+| reason_code | varchar(48) | e.g. `HEARTBEAT_REPLAYED`; empty exactly when accepted (database check) |
 
-Unique constraint on `(node, nonce)` so the database itself rejects a reused nonce.
-Rejected heartbeats from **unknown** node IDs are not stored here (no FK target); they go to
-the audit log only.
+- Unique `(node, nonce)` **only where `accepted` is true**: a nonce is accepted once, but a rejected replay legitimately repeats it.
+- A row is written for every heartbeat from an **enrolled** node, accepted or rejected. Rejections from unknown node ids are not stored (no node to attach them to); they go to the audit log and the Decision.
+- Accepted heartbeats write no Decision and no audit event (one per node every few seconds would drown the evidence view). Rejections write both.
+- The counter check is one conditional `UPDATE node SET last_counter = n WHERE id = ? AND last_counter < n` (`nodes.replay_store`).
 
 ### 3.5 Task — `tasks.Task` (Member 3, *Proposed*)
 
@@ -157,20 +172,25 @@ the audit log only.
 | created_by | FK User | |
 | created_at, assigned_at, deadline_at, completed_at | datetime | |
 
-### 3.6 TaskResult — `results.TaskResult` (Member 2, *Proposed*)
+### 3.6 TaskResult — `results.TaskResult` (Member 2)
+
+Only ciphertext is stored; the plaintext exists in memory while it is checked or shown.
 
 | Field | Type | Notes |
 |---|---|---|
-| id | UUID | PK |
+| id | uuid | PK |
 | task | FK Task | |
-| node | FK Node | Must equal `task.assigned_node` |
-| ephemeral_public_key | char(44) | Node's X25519 key for this result |
-| nonce | char(16) | 12-byte AES-GCM nonce, base64 |
-| ciphertext | text | base64, max 64 KB |
-| integrity_valid | bool | AES-GCM tag verified |
-| plaintext_sha256 | char(64) | nullable; stored instead of the plaintext where possible |
+| node | FK Node | The node that submitted it |
+| ephemeral_public_key | char(44) | base64 of the node's one-time X25519 key |
+| nonce | char(16) | base64 of the 12-byte AES-GCM nonce |
+| ciphertext | text | base64, at most 65,536 characters (data plus 16-byte tag) |
+| integrity_valid | bool | |
+| plaintext_sha256 | char(64), null | Null for a failed attempt |
 | received_at | datetime | |
-| reason_code | varchar(48) | e.g. `RESULT_INTEGRITY_FAILED` |
+| reason_code | varchar(48) | Empty exactly when valid (database check), else `RESULT_INTEGRITY_FAILED` |
+
+- A task has at most **one valid** result (unique `task` where `integrity_valid`). Failed attempts are separate rows, so the evidence view can show a tampered submission (T4).
+- Encryption format and checks: `node-signing-spec.md` section 6 and `api-contract.md` section 5.7.
 
 ### 3.7 TrustScoreRecord — `trust.TrustScoreRecord` (Member 3, *Proposed*)
 
@@ -323,6 +343,7 @@ edits would need the latest hash stored somewhere else (see the limitations stat
 | `node.enroll` | M1 | success, failure |
 | `node.revoke` | M1 | success, failure, denied |
 | `node.request_rejected` | M2 | failure |
+| `node.auth` | M1 | failure only (a signed node request refused: missing headers, unknown or revoked node, bad signature, stale, replayed). Actor is `anonymous` because the node id is only a claim until the signature verifies. Past 30 failures a minute from one client, one summary `request.rate_limited` event a minute replaces the per-request rows |
 | `heartbeat.rejected` | M2 | failure (accepted heartbeats are not audited, to keep the log readable; they are in the Heartbeat table) |
 | `result.integrity_failed` | M2 | failure |
 | `task.submit`, `task.assign`, `task.reassign`, `task.fail` | M3 | success, failure |

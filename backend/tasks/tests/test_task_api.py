@@ -5,6 +5,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.errors import ErrorCode
+from fogtrust_crypto.keys import generate_private_key, public_key_to_b64
+from fogtrust_crypto.node_auth import sign_request
 from nodes.models import Node
 from tasks.models import Task
 from trust.models import PolicyConfig
@@ -112,10 +114,14 @@ class TaskAPITests(TestCase):
             created_by=self.operator,
         )
 
-        resp = self.client.get(
-            "/api/v1/node-api/tasks/next/",
-            HTTP_X_NODE_ID=str(self.node.id),
-        )
+        # Nodes are identified by their request signature, so this node needs a real key pair.
+        key = generate_private_key()
+        Node.objects.filter(pk=self.node.pk).update(public_key=public_key_to_b64(key.public_key()))
+        path = "/api/v1/node-api/tasks/next/"
+        resp = self.client.get(path, **{
+            "HTTP_" + name.upper().replace("-", "_"): value
+            for name, value in sign_request(key, str(self.node.id), "GET", path, b"").items()
+        })
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(resp.data["task"])
         self.assertEqual(resp.data["task"]["id"], str(task.id))

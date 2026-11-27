@@ -26,7 +26,6 @@ that a successful verification returns.
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import re
 import secrets
@@ -39,7 +38,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from . import codes
-from .keys import CryptoKeyError, public_key_fingerprint, public_key_from_b64
+from .keys import CryptoKeyError, public_key_fingerprint, public_key_from_b64, strict_b64
 from .result import VerificationResult
 
 HEADER_NODE_ID = "X-Node-Id"
@@ -50,8 +49,36 @@ REQUIRED_HEADERS = (HEADER_NODE_ID, HEADER_TIMESTAMP, HEADER_NONCE, HEADER_SIGNA
 
 _METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 _NONCE_RE = re.compile(r"[0-9a-f]{32}")
-_TIMESTAMP_RE = re.compile(r"[0-9]{1,12}")
+_TIMESTAMP_RE = re.compile(r"0|[1-9][0-9]{0,11}")  # canonical decimal: no leading zeros
 _PATH_RE = re.compile(r"/[\x21-\x7e]*")  # printable ASCII, no spaces or newlines
+
+
+def _canonical_uuid(value: str) -> Optional[str]:
+    """Return `value` only if it is already a lower-case hyphenated UUID, else None.
+
+    Accepting other spellings (upper case, braces, no hyphens) would let one node id appear as
+    many different header strings. The verifier stays strict so logs and stores see one form.
+    """
+    try:
+        canonical = str(uuid.UUID(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+    return canonical if canonical == value else None
+
+
+def declared_length_too_large(content_length: Optional[str], limit: int) -> bool:
+    """
+    True when a Content-Length header already says the body is over `limit` (or is not a number).
+
+    Lets a view refuse BEFORE reading the body. A missing header returns False (chunked upload):
+    the view must then read at most `limit + 1` bytes, and verify_heartbeat / verify_result_request
+    still check len(body) themselves.
+    """
+    if content_length is None or content_length == "":
+        return False
+    if not isinstance(content_length, str) or not content_length.isascii() or not content_length.isdigit():
+        return True
+    return int(content_length) > limit
 
 
 def sha256_hex(data: bytes) -> str:
@@ -67,7 +94,7 @@ def build_string_to_sign(method: str, path: str, timestamp: int, nonce: str, bod
     Build the exact bytes that get signed. Raises ValueError for any input that could make
     the newline-separated fields ambiguous (so a field can never "contain" another one).
     """
-    if method not in _METHODS:
+    if not isinstance(method, str) or method not in _METHODS:
         raise ValueError("unsupported method")
     if not isinstance(path, str) or not _PATH_RE.fullmatch(path):
         raise ValueError("invalid path")
@@ -163,10 +190,9 @@ def verify_node_request(
     rule("headers_present", True, "all four signed-request headers supplied")
 
     # 2. node exists
-    try:
-        node_id = str(uuid.UUID(values[HEADER_NODE_ID]))
-    except ValueError:
-        rule("node_known", False, "node id is not a valid UUID")
+    node_id = _canonical_uuid(values[HEADER_NODE_ID])
+    if node_id is None:
+        rule("node_known", False, "node id is not a canonical lower-case UUID")
         return finish(False, codes.NODE_UNKNOWN, "The node is not enrolled.")
     node = lookup(node_id)
     if node is None:
@@ -191,11 +217,9 @@ def verify_node_request(
     if not _TIMESTAMP_RE.fullmatch(raw_ts) or not _NONCE_RE.fullmatch(nonce):
         return invalid("timestamp or nonce header is malformed", "A signed-request header is malformed.")
     try:
-        signature = base64.b64decode(raw_sig, validate=True)
-    except (binascii.Error, ValueError):
-        return invalid("signature header is not valid base64", "A signed-request header is malformed.")
-    if len(signature) != 64:
-        return invalid("signature header is not 64 bytes", "A signed-request header is malformed.")
+        signature = strict_b64(raw_sig, 64, "signature")  # canonical form only: one string per signature
+    except CryptoKeyError:
+        return invalid("signature header is not a canonical base64 encoding of 64 bytes", "A signed-request header is malformed.")
     timestamp = int(raw_ts)
     try:
         string_to_sign = build_string_to_sign(method, path, timestamp, nonce, body)

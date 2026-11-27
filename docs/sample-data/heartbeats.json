@@ -1,0 +1,274 @@
+{
+  "description": "Signed heartbeat cases, replayed in order against a fresh replay store. TEST DATA ONLY.",
+  "server_time": 1763547631,
+  "timestamp_window_s": 30,
+  "node": {
+    "id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+    "public_key": "nKRS/LSkkvJMR6kA/adjSBDs7GAyXHbe5V72/kbgpDc=",
+    "status": "active"
+  },
+  "cases": [
+    {
+      "name": "valid",
+      "description": "A normal heartbeat from the enrolled node.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "1a62ff943dead133c025c3619f43e0f1",
+          "X-Node-Signature": "ZiaTrAB25yerDZHLMlxr+1sh/yBvSoNn3cQNOb3Vg/uXa6hmOMb/EAePiXdXqcX0o55SA/BXxWBXZn87JJR0AA=="
+        },
+        "body": "{\"counter\":1,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": true,
+        "reason_code": "OK"
+      }
+    },
+    {
+      "name": "replay",
+      "description": "An exact copy of case 1, as an eavesdropper would resend it (T2).",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "1a62ff943dead133c025c3619f43e0f1",
+          "X-Node-Signature": "ZiaTrAB25yerDZHLMlxr+1sh/yBvSoNn3cQNOb3Vg/uXa6hmOMb/EAePiXdXqcX0o55SA/BXxWBXZn87JJR0AA=="
+        },
+        "body": "{\"counter\":1,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "HEARTBEAT_REPLAYED"
+      }
+    },
+    {
+      "name": "counter-not-increasing",
+      "description": "Validly signed with a fresh nonce, but the counter is not higher than the last accepted one.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "1bb39fcf1c3a54c323cba9f0c526a8e9",
+          "X-Node-Signature": "c3MBupMM1xO2AU4v2CWj8j/akamh2QhdWblRbxbmgdBKyfrZYJ+ltK2QO+XiUwqOVviRhSWQGKKqvVBKb1kyBA=="
+        },
+        "body": "{\"counter\":1,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "HEARTBEAT_COUNTER_REGRESSED"
+      }
+    },
+    {
+      "name": "wrong-key",
+      "description": "Signed with a key the broker never registered (T1, spoofed node).",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "e31b0945d953f55d8f851923d528c76d",
+          "X-Node-Signature": "ye6v0CLIfF+t2NGXIet+1tdnFh9qOO35lNIV33McZipTiEqcdZ+ujoT4bcX95SiB5ihYzCrzQCLn0/tPW+MqCA=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_SIGNATURE_INVALID"
+      }
+    },
+    {
+      "name": "body-altered-after-signing",
+      "description": "The body was changed after it was signed.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "7dca988df062160e83593936a4a247ea",
+          "X-Node-Signature": "jrPVMin50OUkSW2/JkDsB0dZxVv8XYJGwA0CkaulqO/cXpU1D2j/wvBIMWexZUlTbRQbvJIIGlWHQrMvbrzdDw=="
+        },
+        "body": "{\"counter\":999,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_SIGNATURE_INVALID"
+      }
+    },
+    {
+      "name": "stale",
+      "description": "Timestamp an hour in the past.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763544031",
+          "X-Node-Nonce": "70f80974bb01940b724086b784ea0d98",
+          "X-Node-Signature": "anfLYnMYGAgBrgBd/me7eq5HfEzTXhgWOoyFKwVOHbR+hEKQ+bPDrcohDLvjedOkI7R6uf+QJnpaSvLvgrIqDg=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "HEARTBEAT_STALE"
+      }
+    },
+    {
+      "name": "future",
+      "description": "Timestamp an hour in the future.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763551231",
+          "X-Node-Nonce": "28344b0a27dbd7aa2d8db87664ca33bd",
+          "X-Node-Signature": "LwmNbn85a7wmNjQNADl5ekS+UbBwK6l7OU2dmeVxulayPcs8XS3oAQuGNA9P5yldI1kNPR//9qzdXp42k4upCA=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "HEARTBEAT_STALE"
+      }
+    },
+    {
+      "name": "unknown-node",
+      "description": "A node id that was never enrolled.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "83b337e5-021a-9cfc-a4f4-b9ae86d07322",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "dff732c94869aab8786c3d16a660253c",
+          "X-Node-Signature": "ISGws77XvX+1fMXIR3DaagcGxtXE8A0qHbupoQ8sSrW1bTEPbIQ6KkZS4B+Uw9hG8ePH90nkt4qJNJqccPchAw=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_UNKNOWN"
+      }
+    },
+    {
+      "name": "no-signature-headers",
+      "description": "No signed-request headers at all.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {},
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_SIGNATURE_MISSING"
+      }
+    },
+    {
+      "name": "body-not-json",
+      "description": "Validly signed, but the body is not JSON.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "51f999d785a06724696ca6dd7ef18b6a",
+          "X-Node-Signature": "UspjwOdVUfNJnvXB/QI5fwYe1i3wiVNtRE38iLRqg56qIQka/RgcV9scrtC1zvigxtT8EmXO2aZ0+TeUqTmAAQ=="
+        },
+        "body": "not json"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "MALFORMED_REQUEST"
+      }
+    },
+    {
+      "name": "unexpected-field",
+      "description": "Validly signed, but the body has a field that is not allowed.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "35d4c5fb41c7831b5fec645b5bc04b77",
+          "X-Node-Signature": "qNUv5y+SprZvOIrqix4Lf5KhN9/6uFJrZ8OGLGYKj0VLMipIYbKgPgKEbSbbfyAjb3fQ6haX+gd78vnJunTyAw=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\",\"admin\":true}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "VALIDATION_ERROR"
+      }
+    },
+    {
+      "name": "oversized",
+      "description": "A body over the 2 KB limit.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "19fb240448fd1cc7b1f1a6c206ba145e",
+          "X-Node-Signature": "z4UIsTgqhSAH/398bau54oLM4JI4Ms1DXWR3z2IZcI7bJlAIalL0/ArwrPICxWxUbStFVDZblJ+PVKv1lCqeDw=="
+        },
+        "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "PAYLOAD_TOO_LARGE"
+      }
+    },
+    {
+      "name": "revoked-node",
+      "description": "A validly signed heartbeat from a node an admin has revoked (T5).",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "d33eae25372eb9844a01db722b246625",
+          "X-Node-Signature": "qszKKnIbuQ631t7jTNboJT1dclrnLLovazTON6GPIlyJf+uaAVXXjIOU0KjSXRvq7c+DgOXI1uwMiq4IDNY6DQ=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": false,
+        "reason_code": "NODE_REVOKED"
+      },
+      "node_status": "revoked"
+    },
+    {
+      "name": "valid-again",
+      "description": "An honest heartbeat after all the attacks: the node recovers.",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/node-api/heartbeat/",
+        "headers": {
+          "X-Node-Id": "fe60dc8f-43ee-47a0-91a8-c7e0923182fc",
+          "X-Node-Timestamp": "1763547631",
+          "X-Node-Nonce": "f0d0740bde4a0b321704788838f39fec",
+          "X-Node-Signature": "v7qaxG4jYcn5VdhM2wzzYVuY/UYYllcV7fQxGAiAbsrGiTcWmH7WXOP0zmqB7o1rUk0D73bmtsjgfRSFBYhtBw=="
+        },
+        "body": "{\"counter\":2,\"reported_load\":1,\"sent_at\":\"2025-11-19T10:20:31Z\"}"
+      },
+      "expected": {
+        "accepted": true,
+        "reason_code": "OK"
+      }
+    }
+  ]
+}

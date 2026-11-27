@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.2 (Week 3) |
+| Version | 0.6 (Week 5) |
 | Author | Member 2 |
 | Implements | [api-contract.md](api-contract.md) sections 2.2, 5.5 and 5.7 (contract version 0.2), and the enrollment proof in 5.4 |
 | Code | `backend/fogtrust_crypto/` (`keys.py`, `node_auth.py`, `replay.py`, `heartbeat.py`, `results.py`, `result.py`, `node_sim.py`) |
@@ -24,6 +24,8 @@ string_to_sign = METHOD "\n" PATH "\n" TIMESTAMP "\n" NONCE "\n" hex(SHA-256(bod
 | body | The **raw bytes** sent, hashed with SHA-256. An empty body is hashed too | The node signs what it sends; the server hashes what it received. No re-serialising |
 
 A value containing a newline, a space or a non-ASCII character is refused before signing or verifying, so one field can never be read as part of another. The signature is Ed25519, base64 in `X-Node-Signature` (64 bytes decoded).
+
+**One request, one spelling.** Python's parsers are forgiving: `uuid.UUID` accepts upper case, braces and no hyphens, `int` accepts leading zeros, and base64 decoding accepts different last characters that decode to the same bytes. Each of those would let one signed request appear as many different header strings. The verifier therefore accepts only the canonical form: a lower-case hyphenated node id, a decimal timestamp without leading zeros, and a canonical base64 signature. The fuzz test (`test_fuzz.py`) found the node-id case and a crash on a non-string method; the other two were fixed in the same change and each has its own test.
 
 ## 2. Check order
 
@@ -66,31 +68,26 @@ Every verifier returns a `VerificationResult`. `result.to_decision("heartbeat")`
 
 ## 5. Calling it from the API layer (for Member 1 and Member 3)
 
-Not yet run against real models, because the `nodes` app does not exist yet.
+Implemented in `backend/heartbeats/` (the view is `NodeHeartbeatView`). It does four things and no more: refuse an oversized body on `Content-Length` before reading it, read the raw bytes, call `verify_heartbeat`, and store what happened.
 
 ```python
-from fogtrust_crypto.node_auth import NodeInfo
-from fogtrust_crypto.heartbeat import verify_heartbeat
-
-def lookup(node_id):
-    node = Node.objects.filter(id=node_id).first()
-    return NodeInfo(node.public_key, node.status) if node else None
-
-raw_body = request.body  # read BEFORE touching request.data
-result = verify_heartbeat(request.headers, request.method, request.get_full_path(),
-                          raw_body, lookup, DatabaseReplayStore(),
-                          window_s=policy.timestamp_window_s)
-decision = result.to_decision("heartbeat")      # store as a Decision row
-if not result.accepted:
-    raise APIError(result.reason_code)          # audit action: heartbeat.rejected
-# accepted: result.payload is the validated body {"counter", "reported_load", "sent_at"}
+raw_body = request.body                      # the exact signed bytes, read before anything parses them
+window_s, interval_s, policy_version = current_policy()
+result = verify_heartbeat(request.headers, request.method, request.get_full_path(), raw_body,
+                          lookup_node, DatabaseReplayStore(), window_s=window_s)
+# accepted -> Heartbeat row + Node.last_seen_at.   rejected -> Decision + audit event + rejected Heartbeat row
 ```
 
-For results, `verify_result_request(headers, method, path, body, lookup, store, server_private_key, task_id, task.assigned_node_id, window_s=...)` returns a `DecryptionOutcome`: `.accepted`, `.result` (the decision), `.plaintext`, `.plaintext_sha256`. Store the hash; the plaintext field is hidden from `repr` so it cannot be logged by accident.
+- `lookup_node` (Member 1, `nodes/node_auth.py`) builds the `NodeInfo` from the `Node` row.
+- `nodes.replay_store.DatabaseReplayStore` (Member 1, shared by every signed node endpoint): the nonce is claimed by inserting into `NodeNonce` (unique `(node, nonce)`), the counter by one conditional `UPDATE`. State lives in the database, so it survives a restart. Expired nonces are cleared on about 1 in 100 inserts, and `purge_nonces` does it on demand. (Member 2 first wrote a second copy of this store in the heartbeats app; it was removed so that there is one nonce table.)
+- Rejections are stored with `record_decision_dict(result.to_decision("heartbeat"))` and `log_event("heartbeat.rejected", ...)`; the Decision carries the rules fired, the window in `thresholds` and the policy version.
+- Throttles (`heartbeats/throttles.py`): 120/min per (node id, client address) and 1200/min per client address.
 
-For enrollment, call `verify_enrollment_proof(public_key, token, name, proof)` from `fogtrust_crypto.keys`. It returns `False` on any bad input and never raises.
+Results are in `backend/results/` (`NodeResultView`, `ResultDetailView`). The view calls `verify_result_request(..., task_id, task.assigned_node_id, window_s=...)`, which returns a `DecryptionOutcome` (`.accepted`, `.result`, `.plaintext`, `.plaintext_sha256`), then makes the one decision only the database can: a conditional `UPDATE` completes the task if it is still `assigned`, so a task is completed once. Only the ciphertext and the SHA-256 are stored. The plaintext field is hidden from `repr` so it cannot be logged by accident, and `GET /tasks/{id}/result/` decrypts at read time, so a ciphertext edited in the database is caught when someone opens it.
 
-Member 3: the denials above are your trust-score inputs. Read `reason_code`; do not parse `explanation`.
+For enrollment, `verify_enrollment_proof(public_key, token, name, proof)` is already called by `nodes/services.py`.
+
+Member 3: the denials are your trust-score inputs. Read `reason_code` from the Decision; do not parse `explanation`.
 
 ## 6. Result encryption (FR-5, T4)
 
@@ -135,6 +132,7 @@ Attacker behaviours (use only on your own local broker):
 | `replayer` | T2: first call is captured, later calls resend it | first accepted, then `HEARTBEAT_REPLAYED` |
 | `drifting` | Clock an hour slow | `HEARTBEAT_STALE` |
 | `regressor` | Always counter 1 | first accepted, then `HEARTBEAT_COUNTER_REGRESSED` |
+| `crasher` | Honest, then silent after `--crash-after` heartbeats (T3: the broker should notice the silence) | accepted, then no more requests |
 
 | `result --behaviour` | Demonstrates | Expected code |
 |---|---|---|
@@ -143,13 +141,33 @@ Attacker behaviours (use only on your own local broker):
 | `tamper_in_transit` | Ciphertext changed after signing | `NODE_SIGNATURE_INVALID` |
 | `replay` | Captured result resent | first accepted, then `HEARTBEAT_REPLAYED` |
 
+**Fleet and demo runners** (use only on your own local broker):
+
+```bash
+python -m fogtrust_crypto.fleet --server http://127.0.0.1:8000 --tokens-file tokens.txt --duration 60   # T3, T6: several nodes, one per profile
+python -m fogtrust_crypto.demo  --server http://127.0.0.1:8000                                          # T1, T2: PASS/FAIL table, exit code 1 on any mismatch
+python -m fogtrust_crypto.demo  --server ... --state-dir demo-state --task-ids <5 task ids>              # adds the encrypted-result steps (T4)
+python -m fogtrust_crypto.bench_live --server http://127.0.0.1:8000 --count 300                         # latency
+```
+
+The fleet needs one enrollment token per node (each works once). The demo needs one token, and for the result steps five tasks assigned to the demo node, so run it once with `--state-dir` to enroll, assign the tasks, then run it again with `--task-ids`.
+
 `keys/` is git-ignored. The state file next to the key holds the node id, the heartbeat counter and (for replay demos) one captured request. The counter is saved **before** each send, so a number is never reused. On Windows, file mode bits do nothing: keep `keys/` in a folder only your account can read, and not in OneDrive.
 
-## 8. Known limits (for the limitations statement)
+## 8. Early exits and timing
+
+The verifier stops at the first failed check. Measured (`crypto-measurements.md`, section C3), an unknown or revoked node is rejected about 100 microseconds faster than a request with the wrong key, because the signature check is skipped (about 6 µs against about 107 µs in the engine, about 125 µs apart over loopback HTTP). The specific error code already tells the caller the same thing, so equalising the time alone would hide nothing.
+
+**Decision: accepted.** Node ids are random 122-bit UUIDs, so a caller must already hold an id to learn that it exists or is revoked. The early exit is also useful: it makes a flood of requests with unknown ids cheaper for the server than a flood with bad signatures. Hiding the difference would need two changes together (the same client code for unknown, missing and invalid, plus a dummy signature check on the unknown path) and would remove the clear "revoked" signal a legitimate node benefits from. If the team prefers masking, the change is in the API layer's code mapping, not in the engine.
+
+## 9. Known limits (for the limitations statement)
 
 - A stolen node private key is full impersonation until an admin revokes the node.
 - A node that loses its counter file sends counters the server rejects; it must be re-enrolled.
 - Node clocks must be within `timestamp_window_s` of the server.
 - A forged result written directly to the database cannot be told apart from a real one (section 6).
-- The in-memory replay store forgets everything on restart; only the database store survives it.
+- The in-memory replay store forgets everything on restart; the database store (used by the endpoints) does not.
+- Anyone with write access to the database can insert a brand-new result that looks valid (anyone can encrypt to the server's public key). Editing an existing result is caught (AES-GCM, checked when it is read); forging a new one is not. See the threat model, CR-11.
+- The server has one long-term result key and no rotation: whoever steals it can read every stored result.
+- Trust is scored only on failures a stranger cannot cause (a damaged result). Missed heartbeats are not yet scored: the rule exists in the trust engine but nothing feeds it (security review, finding 5).
 - Rate limiting that bounds nonce growth is Member 1's throttle (120 per minute per node); the engine itself only purges.
