@@ -65,7 +65,9 @@ python -m pytest
 | [docs/api-contract.md](docs/api-contract.md) | Endpoints, request and response shapes, roles, error codes |
 | [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
 | [docs/test-evidence/](docs/test-evidence/) | Input, expected, actual and result for T1 to T5 and T-final, with measurements |
-| [docs/decisions/](docs/decisions/) | Architecture decision records |
+| [docs/guide-identity-admin.md](docs/guide-identity-admin.md) | User and administrator guide: roles, sign-in, users, enrollment tokens, revocation, audit log |
+| [docs/diagrams/identity-slice-dataflow.md](docs/diagrams/identity-slice-dataflow.md) | Data flow and trust boundaries for people, enrollment and the audit log |
+| [docs/identity-limitations-ethics.md](docs/identity-limitations-ethics.md), [docs/demo-script-identity.md](docs/demo-script-identity.md), [docs/report-section-identity.md](docs/report-section-identity.md) | Limitations and ethics, demo script, report section for the identity slice |
 | [docs/guide-node-and-crypto.md](docs/guide-node-and-crypto.md) | User and administrator guide: node keys, enrollment, rejection codes, server key, policy, revocation |
 | [docs/node-signing-spec.md](docs/node-signing-spec.md) | How requests are signed, replay defence, result encryption |
 | [docs/security-review-api.md](docs/security-review-api.md) | Every API route, how it is authenticated, and the findings |

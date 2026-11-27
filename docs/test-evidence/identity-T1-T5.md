@@ -44,6 +44,7 @@ The precise reason is in the audit event (`node.enroll`, `failure`) and in the D
 | 5.10 | Trust engine revokes automatically | Same service, system actor | `revoke_source=automatic`, actor `system/trust-engine` | `test_the_trust_engine_can_revoke_through_the_same_service` | Pass |
 | 5.11 | Scheduler hook | Signal sent once, after commit; broken receiver cannot undo revocation | as expected | `test_the_scheduler_hook_fires_once_after_commit`, `test_a_failing_receiver_cannot_undo_the_revocation` | Pass |
 | 5.12 | Audit chain after all of the above | Still valid | `valid: true` | `test_the_audit_chain_still_verifies` | Pass |
+| 5.13 | Node revoked while it holds tasks (manual and automatic) | Tasks with attempts left go back to the queue and only reach active nodes; a task out of attempts fails with `NODE_REVOKED`; load released; trust not charged | as expected; `task.reassign` audited with `cause: node_revoked`; chain valid | `backend/tasks/tests/test_revocation_requeue.py` (7 tests) | Pass |
 
 ## Unauthorized request (T-final)
 
