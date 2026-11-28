@@ -57,11 +57,20 @@ On Windows PowerShell use `$env:FOGTRUST_ENROLL_TOKEN = "<token>"` instead of th
 python -m pytest
 ```
 
+Dashboard unit tests (report sanitization):
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
 ## Documentation
 
 | Document | Contents |
 |---|---|
 | [docs/data-model.md](docs/data-model.md) | Tables, decision schema, audit event format, input validation rules |
+| [docs/data-flow.md](docs/data-flow.md) | Trust boundaries and end-to-end flows: browser, API, security engine, repository + audit log, node simulators |
 | [docs/api-contract.md](docs/api-contract.md) | Endpoints, request and response shapes, roles, error codes |
 | [docs/threat-model/](docs/threat-model/) | Threats and mitigations per slice |
 | [docs/test-evidence/](docs/test-evidence/) | Input, expected, actual and result for T1 to T5 and T-final, with measurements |
@@ -81,6 +90,6 @@ python -m pytest
 |---|---|---|
 | 1 | Requirements, data model, API contract, threat model, skeleton | Done |
 | 2 | Authentication, audit log, one end-to-end slice | Done |
-| 3 | Security engine, dashboard, features | Backend done: identity, enrollment, revocation, users, evidence data, replay defence, encrypted results, trust engine, task queue, signed node authentication, heartbeat and result endpoints. Dashboard pending |
-| 4 | Integration, adversarial tests, measurement, hardening | Backend done: attack runs T1 to T5, fuzzing, measurements, security review (see test-evidence). Dashboard integration pending |
+| 3 | Security engine, dashboard, features | Done: Identity, enrollment, revocation, users, replay defence, encrypted results, trust engine, task queue, and React dashboard (views, state handling, evidence, reports) |
+| 4 | Integration, adversarial tests, measurement, hardening | Done: Attack runs T1 to T5, fuzzing, measurements, security review, and frontend API integration |
 | 5 | Fixes, evaluation, documentation, demo | In progress |
