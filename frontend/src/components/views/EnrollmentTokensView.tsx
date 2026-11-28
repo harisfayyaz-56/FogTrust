@@ -127,12 +127,12 @@ export const EnrollmentTokensView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <KeyRound className="w-5 h-5 text-teal-400" />
-            Node Enrollment Tokens (FR-1)
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-slate-400" />
+            Enrollment Tokens
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Issue high-entropy, one-time enrollment secrets. Raw tokens are SHA-256 hashed and shown once.
+          <p className="text-xs text-slate-400 mt-0.5">
+            One-time enrollment secrets for fog nodes.
           </p>
         </div>
 

@@ -96,13 +96,12 @@ export const PolicyView: React.FC<PolicyViewProps> = ({ onNavigate }) => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-teal-400" />
-            Security & Trust Scoring Policy
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-slate-400" />
+            Trust Policy
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Read-only view of the immutable, versioned policy regulating rule weights, clock skew windows,
-            and task scheduling thresholds.
+          <p className="text-xs text-slate-400 mt-0.5">
+            Active scoring weights, admission thresholds, and timing parameters.
           </p>
         </div>
 

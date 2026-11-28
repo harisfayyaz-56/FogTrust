@@ -108,11 +108,11 @@ export const ReportsView: React.FC = () => {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-teal-400" />
-            Sanitized Report Generator (FR-7 / M4)
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-slate-400" />
+            Compliance Reports
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">Zero-secret exports for auditors and stakeholders.</p>
+          <p className="text-xs text-slate-400 mt-0.5">Export sanitized operational data.</p>
         </div>
         <div className="p-8 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col items-center text-center gap-3">
           <div className="w-12 h-12 rounded-full bg-rose-950/70 border border-rose-800 flex items-center justify-center">
@@ -155,13 +155,12 @@ export const ReportsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-teal-400" />
-            Sanitized Report Generator (FR-7 / M4)
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-slate-400" />
+            Compliance Reports
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Export compliance-ready summaries for auditors and stakeholders. Strictly strips all cryptographic
-            secrets.
+          <p className="text-xs text-slate-400 mt-0.5">
+            Export sanitized operational data in JSON or CSV format.
           </p>
         </div>
 

@@ -192,13 +192,12 @@ export const EvidenceView: React.FC<EvidenceViewProps> = ({ onNavigate }) => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <FileCheck2 className="w-5 h-5 text-teal-400" />
-            Evidence, Rejected Heartbeats & Audit Trail
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <FileCheck2 className="w-4 h-4 text-slate-400" />
+            Security Decisions & Evidence
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Every authorization decision records the exact rules and non-secret evidence; rejected heartbeats
-            keep their precise error code, and the audit ledger proves the record was not edited.
+          <p className="text-xs text-slate-400 mt-0.5">
+            Rule evaluations, rejection reasons, and non-secret audit evidence.
           </p>
         </div>
 

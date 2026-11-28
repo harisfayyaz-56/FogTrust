@@ -101,12 +101,12 @@ export const AuditLogView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-teal-400" />
-            Append-Only Hash-Chained Audit Log
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-slate-400" />
+            Audit Ledger
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Cryptographic ledger tracking all security events. Tampering breaks SHA-256 pointers (ID-9).
+          <p className="text-xs text-slate-400 mt-0.5">
+            SHA-256 hash-chained security event log with tamper verification.
           </p>
         </div>
 
