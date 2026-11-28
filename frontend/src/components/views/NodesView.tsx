@@ -167,12 +167,12 @@ export const NodesView: React.FC<NodesViewProps> = ({ onNavigate }) => {
       {/* Header & Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Server className="w-5 h-5 text-teal-400" />
-            Edge Node Fleet Management
+          <h1 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <Server className="w-4 h-4 text-slate-400" />
+            Edge Nodes
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Cryptographically enrolled fog nodes, live health, trust score, and server-enforced permanent revocation.
+          <p className="text-xs text-slate-400 mt-0.5">
+            Registered fog nodes, capacity, trust ratings, and revocation controls.
           </p>
         </div>
 

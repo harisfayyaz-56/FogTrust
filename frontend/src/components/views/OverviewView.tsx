@@ -95,24 +95,23 @@ export const OverviewView: React.FC<{ onNavigate: (tab: string) => void }> = ({ 
   return (
     <div className="space-y-6">
       {/* Top Banner */}
-      <div className="p-6 rounded-xl bg-gradient-to-r from-slate-900 via-slate-850 to-teal-950/40 border border-slate-800 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 rounded border border-slate-800 bg-slate-900/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            FogTrust Broker Security Dashboard
+          <h1 className="text-base font-semibold text-slate-100">
+            System Overview
           </h1>
-          <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-            Real-time monitoring for edge node enrollment, cryptographic heartbeat verification,
-            rule-based trust scoring (0–100), task scheduling, and hash-chained audit integrity.
+          <p className="text-xs text-slate-400 mt-0.5 max-w-xl">
+            Fleet health, trust score averages, scheduler load, and audit log status.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => onNavigate('evidence')}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-xs font-medium transition-colors flex items-center gap-1.5"
           >
-            <FileCheck className="w-4 h-4" />
-            <span>Open Evidence View (FR-7)</span>
+            <FileCheck className="w-3.5 h-3.5 text-slate-400" />
+            <span>View Decisions</span>
           </button>
         </div>
       </div>
