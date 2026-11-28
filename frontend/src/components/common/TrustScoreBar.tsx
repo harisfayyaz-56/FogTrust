@@ -24,35 +24,27 @@ export const TrustScoreBar: React.FC<TrustScoreBarProps> = ({
     textColor = 'text-amber-400';
   }
 
-  const isEligible = safeScore >= threshold;
-
   return (
-    <div className="flex flex-col gap-1 w-full max-w-[180px]">
-      <div className="flex items-center justify-between text-xs">
-        {showNumeric && (
-          <span className={`font-mono font-bold ${textColor}`}>
+    <div className="flex flex-col gap-1 w-full max-w-[140px]">
+      {showNumeric && (
+        <div className="flex items-center justify-between text-xs">
+          <span className={`font-mono font-medium ${textColor}`}>
             {safeScore}/100
           </span>
-        )}
-        <span
-          className={`text-[10px] uppercase font-semibold px-1 rounded ${
-            isEligible ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'
-          }`}
-          title={`Scheduler threshold: >= ${threshold}`}
-        >
-          {isEligible ? 'Trusted' : 'Degraded'}
-        </span>
-      </div>
-      <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/60 relative">
+          <span className="text-[10px] text-slate-500">
+            min {threshold}
+          </span>
+        </div>
+      )}
+      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700/50 relative">
         <div
           className={`h-full ${barColor} transition-all duration-300 rounded-full`}
           style={{ width: `${safeScore}%` }}
         />
-        {/* Subtle threshold indicator marker */}
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-slate-400/80 z-10"
+          className="absolute top-0 bottom-0 w-0.5 bg-slate-500/80 z-10"
           style={{ left: `${threshold}%` }}
-          title={`Policy threshold (${threshold})`}
+          title={`Policy threshold: ${threshold}`}
         />
       </div>
     </div>
