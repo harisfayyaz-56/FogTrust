@@ -35,31 +35,28 @@ export const Navbar: React.FC = () => {
       {/* Brand & System Health */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-400">
-            <Shield className="w-5 h-5 text-teal-400" />
+          <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
+            <Shield className="w-4 h-4 text-slate-300" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-100 tracking-tight text-base">FogTrust</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                FR-7
-              </span>
+              <span className="font-semibold text-slate-100 tracking-tight text-sm">FogTrust</span>
             </div>
-            <p className="text-[11px] text-slate-400">Edge Security Broker</p>
+            <p className="text-[10px] text-slate-500 font-mono">Broker Console</p>
           </div>
         </div>
 
         {/* Live Broker Health Indicator */}
-        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-800/80 border border-slate-700/60 text-xs">
-          <Activity
-            className={`w-3.5 h-3.5 ${
-              health?.status === 'ok' ? 'text-emerald-400 animate-pulse' : 'text-amber-400'
+        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded bg-slate-800/60 border border-slate-700/60 text-xs">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              health?.status === 'ok' ? 'bg-emerald-400' : 'bg-amber-400'
             }`}
           />
-          <span className="text-slate-300">
-            {health?.status === 'ok' ? 'Broker Online' : 'Broker Connecting...'}
+          <span className="text-slate-300 font-medium">
+            {health?.status === 'ok' ? 'Online' : 'Connecting...'}
           </span>
-          <span className="text-slate-500 text-[10px]">({health?.service || 'v0.1.0'})</span>
+          <span className="text-slate-500 text-[10px]">({health?.service || 'broker'})</span>
         </div>
       </div>
 
@@ -68,15 +65,14 @@ export const Navbar: React.FC = () => {
         {/* Demo Mode Toggle */}
         <button
           onClick={() => setDemoMode(!isDemoMode)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-medium transition-all ${
             isDemoMode
-              ? 'bg-amber-950/40 border-amber-600/60 text-amber-300'
-              : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
+              ? 'bg-amber-950/40 border-amber-600/50 text-amber-300'
+              : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
           }`}
           title="Toggle between Live Server API and Offline Demo Simulation"
         >
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Demo Data Mode:</span>
+          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-amber-400">Demo</span>
           {isDemoMode ? (
             <ToggleRight className="w-4 h-4 text-amber-400" />
           ) : (

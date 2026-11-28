@@ -146,10 +146,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
   const visibleItems = NAV_ITEMS.filter((item) => isTabAllowed(item.id, role, hasPermission));
 
   return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-900/50 flex flex-col justify-between p-4 shrink-0">
-      <div className="space-y-1">
-        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 font-mono">
-          Broker Navigation
+    <aside className="w-56 border-r border-slate-800 bg-slate-900/60 flex flex-col justify-between p-3 shrink-0">
+      <div className="space-y-0.5">
+        <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 font-mono">
+          Navigation
         </div>
 
         {visibleItems.map((item) => {
@@ -160,15 +160,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
             <button
               key={item.id}
               onClick={() => onSelectTab(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              className={`w-full flex items-center px-2.5 py-2 rounded text-xs font-medium transition-colors ${
                 isActive
-                  ? 'bg-teal-500/15 text-teal-300 border border-teal-500/30 shadow-sm'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+                  ? 'bg-slate-800 text-slate-100 font-semibold'
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
               }`}
-              title={item.description}
             >
               <div className="flex items-center gap-2.5">
-                <Icon className={`w-4 h-4 ${isActive ? 'text-teal-400' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 ${isActive ? 'text-slate-200' : 'text-slate-500'}`} />
                 <span className="truncate">{item.label}</span>
               </div>
             </button>
@@ -176,14 +175,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
         })}
       </div>
 
-      {/* Security reminder badge at bottom */}
-      <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 text-[11px] text-slate-400 space-y-1">
-        <div className="flex items-center gap-1.5 text-teal-400 font-semibold font-mono text-[10px] uppercase">
-          <span>Security Notice</span>
-        </div>
-        <p className="leading-relaxed text-slate-400">
-          Server enforces all access controls. The UI hides restricted controls as a convenience only.
-        </p>
+      <div className="p-2.5 text-[10px] text-slate-500 border-t border-slate-800 font-mono">
+        v0.1.0 • broker-ui
       </div>
     </aside>
   );
